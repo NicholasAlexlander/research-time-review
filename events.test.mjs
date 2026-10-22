@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {categoryGuides,pressureHint,createEvent,changeEvent,updateEventInfo,advanceEvent,correctNode,
   pressureAt,pressureHistory,currentPressure,eventAt,recommendEvents,eventWeekSummary,sustainedPressure,
-  eventsAtDate,eventStartDate,changeEventStart,stageAtDate,reviseStage,repairRetiredProgress} from './events.mjs';
+  eventsAtDate,eventListAtDate,eventStartDate,changeEventStart,stageAtDate,reviseStage,repairRetiredProgress} from './events.mjs';
 import {eventCardMarkup} from './events-ui.mjs';
 import {analyzeDailyPlan} from './plan.mjs';
 
@@ -115,6 +115,22 @@ test('daily peak and three-day residual survive ending and cross a week boundary
   const next=eventWeekSummary({events:[e],eventDays:{}},'2026-10-12','2026-10-15');
   assert.equal(next.rows[2].load,2.5);
   assert.equal(pressureAt([], '2026-10-14').load,null);
+});
+
+test('event cards retain active, this-week activity and residual sources without deleting history',()=>{
+  const stale=changeEvent(make('2026-10-05',2,{name:'上周完成'}),{status:'ended'},at('2026-10-06'));
+  const recent=changeEvent(make('2026-10-10',2,{name:'周末完成'}),{status:'ended'},at('2026-10-11'));
+  const worked=changeEvent(make('2026-10-08',0,{name:'本周推进'}),{status:'ended'},at('2026-10-13'));
+  const ongoing=make('2026-10-01',1,{name:'持续处理中'});
+  const records=[stale,recent,worked,ongoing];
+  const names=date=>eventListAtDate(records,date,'2026-10-22').map(e=>e.name);
+  assert.deepEqual(names('2026-10-12'),['周末完成','本周推进','持续处理中']);
+  assert.deepEqual(names('2026-10-14'),['周末完成','本周推进','持续处理中']);
+  assert.deepEqual(names('2026-10-15'),['本周推进','持续处理中']);
+  assert.deepEqual(names('2026-10-19'),['持续处理中']);
+  assert.deepEqual(names('2026-10-06'),['上周完成','持续处理中']);
+  assert.equal(records.length,4);
+  assert.equal(eventListAtDate(records,'2026-10-23','2026-10-22').length,0);
 });
 
 test('recommendations balance urgency, coordination, waiting, cognition and energy',()=>{

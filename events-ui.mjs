@@ -2,7 +2,7 @@ import {formatMinutes,shiftDate} from './calc.mjs';
 import {categoryGuides,eventStatuses,coordinationLabels,energyLabels,conditionLabels,
   activeEvents,currentPressure,pressureAt,pressureBand,pressureHint,createEvent,changeEvent,updateEventInfo,
   advanceEvent,reviseStage,stageAtDate,progressForStage,correctNode,markCoordinated,recommendEvents,eventWeekSummary,
-  eventsAtDate,eventStartDate} from './events.mjs';
+  eventsAtDate,eventListAtDate,eventStartDate} from './events.mjs';
 import {analyzeDailyPlan} from './plan.mjs';
 
 const $=id=>document.getElementById(id);
@@ -82,11 +82,11 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   function renderCards(){
     const date=getSelected(),historical=date!==localDate();
     const filters={category:$('filterCategory').value,priority:$('filterPriority').value,pressure:$('filterPressure').value,status:$('filterStatus').value,coordinatable:$('filterCoordination').value};
-    const available=visibleOnDate();
+    const available=eventListAtDate(events(),date);
     const visible=available.filter(e=>Object.entries(filters).every(([key,value])=>!value||String(e[key])===value))
       .sort((a,b)=>(a.status==='ended')-(b.status==='ended')||a.priority.localeCompare(b.priority)||b.updatedAt.localeCompare(a.updatedAt));
-    $('eventListDate').textContent=date>localDate()?'未来日期尚无历史记录':`截至 ${date} 已发生的事件`;
-    $('eventCount').textContent=`${visible.length} 项（当日累计 ${available.length} 项）`;
+    $('eventListDate').textContent=date>localDate()?'未来日期尚无历史记录':`${date} · 显示未结束、本周有变化或仍贡献残留压力的事件；更早记录可切换到对应日期查看`;
+    $('eventCount').textContent=`${visible.length} 项（相关事件 ${available.length} 项）`;
     $('eventCards').innerHTML=visible.length?visible.map(event=>eventCardMarkup(event,{historical})).join(''):
       `<p class="empty-days">${date>localDate()?'未来日期尚无已发生的事件。':'该日期尚无事件或没有符合筛选条件的事件。可用“新增事件”补录当天发生的事务。'}</p>`;
   }

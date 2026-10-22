@@ -297,6 +297,19 @@ export function eventsAtDate(events,date){
       history,updatedAt:history.at(-1)?.at||event.createdAt}];
   });
 }
+// Keep the event list focused on work relevant to the selected day. This only
+// filters cards; pressure history, weekly exports and persisted events still
+// read the full event collection.
+export function eventListAtDate(events,date,asOf=dateInShanghai(new Date().toISOString())){
+  if(date>asOf)return [];
+  const start=weekStart(date);
+  const residualIds=new Set((pressureAt(events,date,asOf).residualSources||[])
+    .filter(source=>source.amount>0).map(source=>source.eventId));
+  return eventsAtDate(events,date).filter(event=>
+    event.status!=='ended'||residualIds.has(event.id)||eventStartDate(event)>=start||
+    (event.history||[]).some(change=>change.at&&dateInShanghai(change.at)>=start&&dateInShanghai(change.at)<=date)
+  );
+}
 export function highPressureDays(event,asOf=dateInShanghai(new Date().toISOString())){
   if(!event.createdAt)return 0;
   let count=0;
