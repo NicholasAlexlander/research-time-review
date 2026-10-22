@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>科研工时 · 一周复盘</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="科研工时首页"><span class="brand-mark">R<span>+</span>E</span><span>科研工时</span></a>
+      <div class="top-actions"><span class="private" id="syncIndicator"><span class="dot"></span><span id="syncText">正在连接云端</span></span><button type="button" class="text-button" id="settingsButton">规则与数据 <span aria-hidden="true">↗</span></button></div>
+    </header>
+
+    <main id="top">
+      <div class="sync-banner" id="syncBanner" hidden role="status"><span id="syncMessage"></span><div id="syncChoices" hidden><button type="button" class="button-secondary" id="useCloud">采用云端记录</button><button type="button" class="button-secondary" id="overwriteCloud">用本地记录覆盖云端</button></div></div>
+      <section class="intro" aria-label="本周概览">
+        <div class="intro-head"><div><p class="eyebrow">WEEKLY RESEARCH LOG</p><h1>把时间花在哪里，<br><em>一眼看清。</em></h1><p class="intro-copy">每天记录投入与产出，自动核算积分、调休和一周的重心。</p></div><div class="week-switch"><button class="icon-button" id="prevWeek" aria-label="上一周">←</button><div><span class="micro">当前周 · 周一至周日</span><strong id="weekRange">—</strong></div><button class="icon-button" id="nextWeek" aria-label="下一周">→</button></div></div>
+        <div class="stat-grid">
+          <article class="stat primary"><span>有效任务 <small>R + E</small></span><strong id="statEffective">0h</strong><p id="effectiveFoot">本周科研与工程投入</p></article>
+          <article class="stat"><span>本周总投入</span><strong id="statTotal">0h</strong><p id="totalFoot">已记录 0 天</p></article>
+          <article class="stat"><span>本周净积分</span><strong id="statPoints">0</strong><p id="pointsFoot">累计 0 分</p></article>
+          <article class="stat"><span>当前调休余额</span><strong id="statRest">0m</strong><p id="restFoot">余额正常</p></article>
+        </div>
+        <div class="event-overview" id="eventOverview" aria-labelledby="eventOverviewTitle"><div><span class="micro">事务与压力管理</span><h2 id="eventOverviewTitle">事务压力与恢复</h2><p id="eventOverviewText">尚无事务记录</p></div><div class="event-overview-metrics"><span>当前压力 <strong id="pressureNow">0</strong></span><span>压力残留 <strong id="pressureResidual">记录不足</strong></span><span>持续负荷 <strong id="pressureChronic">0</strong></span><span>综合负荷 <strong id="pressureLoad">记录不足</strong></span></div><p id="pressureOverviewNote"></p><div class="event-overview-actions"><button type="button" class="button-primary" id="overviewNewEvent">新增事件</button><a class="button-secondary" href="#eventsSection">管理事件</a><a class="button-secondary" href="#recommendations">查看推荐</a></div></div>
+      </section>
+
+      <section class="workspace" aria-labelledby="entryTitle">
+        <div class="section-heading"><div><p class="eyebrow">01 / DAILY ENTRY</p><h2 id="entryTitle">每日记录</h2><p id="entrySubtitle">按实际投入填写。休息、散步与摸鱼不计入工作时间。</p></div><div class="date-switch"><button type="button" class="icon-button" id="prevDay" aria-label="前一天">←</button><input type="date" id="entryDate" aria-label="记录日期"><button type="button" class="icon-button" id="nextDay" aria-label="后一天">→</button><button type="button" class="button-secondary" id="calendarButton" aria-expanded="false" aria-controls="calendarPopover">查看日历</button></div></div>
+        <div class="schedule-row"><span id="dateStatus" class="schedule-chip"></span><span id="actualStatus" class="schedule-chip"></span><span id="scheduleHint"></span></div>
+        <div id="calendarPopover" class="calendar-popover" hidden><div class="calendar-head"><button type="button" class="icon-button" id="prevMonth" aria-label="上个月">←</button><strong id="calendarMonth"></strong><button type="button" class="icon-button" id="nextMonth" aria-label="下个月">→</button></div><div class="calendar-weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div><div id="calendarGrid" class="calendar-grid"></div><p id="calendarNote" class="fineprint"></p><p class="fineprint">节假日与补班依据 <a href="https://www.forestry.gov.cn/c/www/szxx/594663.jhtml" target="_blank" rel="noopener noreferrer">2025 年</a>、<a href="https://www.beijing.gov.cn/fuwu/bmfw/sy/jrts/202511/t20251104_4258838.html" target="_blank" rel="noopener noreferrer">2026 年</a>国务院办公厅安排。</p></div>
+        <form id="dayForm" novalidate>
+          <div class="mode-controls"><div><strong>今日实际安排</strong><span id="modeDescription"></span><span id="legacyNotice" class="legacy-notice" hidden></span></div><div class="mode-buttons"><button type="button" id="normalModeButton" class="button-secondary" aria-pressed="false">正常安排</button><button type="button" id="adjustModeButton" class="button-secondary" aria-pressed="false">调整安排</button><button type="button" id="extraWorkButton" class="button-secondary" aria-pressed="false">休息日额外工作</button></div></div>
+          <div id="restPanel" class="rest-panel" hidden><h3 id="restPanelTitle">休息日记录</h3><p id="restPanelDescription">记录生活和之后的安排，不需要填写每日工作时间。</p><label class="field-label" for="dailyLife" id="dailyLifeLabel">今日日常记录</label><textarea id="dailyLife" rows="4" placeholder="休息、运动、生活、想法……"></textarea><div id="nextWeekPlanField"><label class="field-label" for="nextWeekPlan">下周计划</label><textarea id="nextWeekPlan" rows="4" placeholder="下周想推进的任务和准备……"></textarea></div><div id="tomorrowPlanField" hidden><label class="field-label" for="tomorrowPlan">明天计划</label><textarea id="tomorrowPlan" rows="4" placeholder="明天准备从哪项工作开始？有什么需要提前安排？"></textarea></div><p id="legacyWeekPlan" class="fineprint" hidden></p></div>
+          <div id="workPanel" class="entry-layout">
+            <div class="entry-main">
+              <div class="field-group"><div class="group-title"><h3>时间投入</h3><span>小时 / 分钟</span></div><div id="timeFields" class="time-grid"></div><div class="inline-total"><span>当日有效任务 <b>R + E</b></span><strong id="previewEffective">0m</strong><span class="divider"></span><span>总投入</span><strong id="previewTotal">0m</strong></div></div>
+              <div class="field-group"><div class="group-title"><h3>专项产出与复盘</h3><span>完成一项写一行</span></div><label class="field-label" for="outputs">论文复现、代码、报告、汇报等</label><textarea id="outputs" rows="3" placeholder="例如：复现一个网表 Bug；整理测试结果与下一步"></textarea><div class="two-fields"><label>当前阻塞<textarea id="blocker" rows="2" placeholder="可留空"></textarea></label><label>明日第一步<textarea id="nextAction" rows="2" placeholder="写下可直接开始的动作"></textarea></label></div><div class="check-row"><label><input type="checkbox" id="growthDone"> 完成预定的长期能力建设</label><label><input type="checkbox" id="reviewDone"> 完成今日复盘</label></div><label class="small-input">专项产出加分 <input id="outputPoints" type="number" min="0" step="0.5" value="0" inputmode="decimal"> <small>分 · 原记录未设统一分值，按实际标准填写</small></label></div>
+            </div>
+            <aside class="entry-side">
+              <div class="side-card"><h3>加班与已积累调休</h3><p id="overtimeExplanation">加班已包含在左侧时间里，此处只用于核算，不会重复计入总投入。</p><div id="manualOvertime"><label class="field-label">加班原因 <select id="overtimeReason"><option value="necessary">实际任务需要或自愿延长有效工作</option><option value="self">自身拖延补工</option><option value="artificial">无必要延长</option></select></label><div class="two-fields"><div><span class="field-label">23:30 前有效加班</span><div class="duration" data-duration="normalOvertime"></div></div><div><span class="field-label">23:30 后有效加班</span><div class="duration" data-duration="nightOvertime"></div></div></div><div><span class="field-label">今日使用已积累调休</span><div class="duration" data-duration="usedRest"></div><small class="fineprint">只减少今日基础工时目标，不改变今日的工作日状态。</small></div><label class="field-label rest-nature" id="restNatureField" for="usedRestNature" hidden>调休性质 <select id="usedRestNature"><option value="">暂不标注</option><option value="active">主动调休</option><option value="passive">被动抵扣</option></select><small>仅用于周复盘，不影响积分和调休余额。</small></label><p id="adjustedGoal" class="goal-hint"></p><p class="fineprint">有效加班按 0.5 倍、23:30 后按 1 倍累计调休；23:30 只是调休换算的分段，晚间工作扣分从 00:00 开始。</p></div><p id="overtimeHint" class="overtime-hint" hidden role="status"></p></div>
+              <div class="side-card" id="workRhythm"><h3>工作节奏</h3><label class="field-label">最晚结束工作 <input type="time" id="endTime"><small>跨过午夜，填写次日凌晨时间；00:00 起核算晚间扣分</small></label><div class="flags"><label><input type="checkbox" id="procrastinated"> 自身拖延导致加班</label><label><input type="checkbox" id="drift"> 无意识注意力漂移 ≥1h</label><label><input type="checkbox" id="fatigue"> 疲劳后仍主动增加任务</label><label><input type="checkbox" id="artificialOvertime"> 为积分故意延长工作</label><label><input type="checkbox" id="unnecessaryOvertime"> 强制调休区仍无必要加班</label><label><input type="checkbox" id="p0Emergency"> 深夜工作属于 P0 紧急事件</label></div></div>
+            </aside>
+          </div>
+          <div class="observation-group"><label class="field-label" for="observation">今日观察 / 异常</label><textarea id="observation" rows="3" placeholder="发现了什么异常？有什么值得后续分析的现象？"></textarea></div>
+          <div class="entry-footer"><div><span class="micro">实时预览</span><strong id="previewScore">+0 分</strong><span id="previewRest">预计新增调休 0m</span><p id="previewWarnings" class="form-warning" role="status"></p></div><div class="save-actions"><span id="saveState" role="status"></span><button type="submit" class="button-primary">保存当日记录 <span aria-hidden="true">↗</span></button></div></div>
+        </form>
+      </section>
+
+      <section class="workspace event-workspace" id="eventsSection" aria-labelledby="eventsTitle">
+        <div class="section-heading"><div><p class="eyebrow">02 / EVENTS & RECOVERY</p><h2 id="eventsTitle">事务与压力管理</h2><p>记录事务的持续牵挂、进展和可调整空间。压力只用于复盘，不计入工时或积分。</p></div><button type="button" class="button-primary" id="newEvent">新增事件</button></div>
+        <div class="event-layout"><div class="event-list-panel"><div class="panel-header"><h3>事件列表</h3><span id="eventCount">0 项</span></div><p id="eventListDate" class="event-date-caption"></p><div class="event-filters"><label>类别<select id="filterCategory"><option value="">全部</option><option>R</option><option>E</option><option>P</option><option>S</option><option>C</option><option>M</option><option>A</option></select></label><label>优先级<select id="filterPriority"><option value="">全部</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label><label>压力<select id="filterPressure"><option value="">全部</option><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label><label>状态<select id="filterStatus"><option value="">全部</option><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label><label>可协调<select id="filterCoordination"><option value="">全部</option><option value="yes">是</option><option value="no">否</option><option value="unknown">暂不确定</option></select></label></div><div id="eventCards" class="event-cards"></div><p id="eventActionState" role="status"></p></div>
+        <div class="event-support"><div class="event-support-card" id="recommendations"><h3 id="recommendTitle">现在怎么安排</h3><p id="recommendContext"></p><div id="recommendContent"></div><p id="recommendRecovery"></p><button type="button" class="button-secondary" id="confirmOriginalPlan" hidden>将当前选择固定为原计划</button></div><div class="event-support-card" id="todayEventPanel"><h3 id="todayPlanTitle">今日计划</h3><p id="eventDayDate"></p><label>当前精力状态（可选）<select id="eventEnergy"><option value="">未记录</option><option value="high">精力充足</option><option value="normal">正常</option><option value="tired">疲劳</option><option value="exhausted">明显疲惫</option></select></label><div class="plan-display"><h4>原计划</h4><div id="originalPlan"></div><h4>当前计划</h4><div id="plannedEvents"></div><p id="planChanges" class="fineprint"></p></div><div class="plan-evaluation"><h4>计划压力评估</h4><div id="planAssessment"></div></div><p id="eventDayState" role="status"></p></div></div></div>
+      </section>
+
+      <section class="review" aria-labelledby="reviewTitle">
+        <div class="section-heading"><div><p class="eyebrow">03 / WEEKLY REVIEW</p><h2 id="reviewTitle">一周复盘</h2><p>从时间结构看到科研主线，以及积分和调休的变化。</p></div><span class="week-pill" id="reviewRange">本周</span></div>
+        <div class="review-grid"><div class="panel"><div class="panel-header"><h3>时间分布</h3><span id="weekTotalLabel">合计 0m</span></div><div id="distribution" class="distribution"></div><div id="legend" class="legend"></div><p class="panel-note" id="structureNote">保存一条记录后，这里会显示各类投入的占比。</p></div><div class="panel"><div class="panel-header"><h3>调休与积分</h3><span id="restStatus" class="status-chip">余额正常</span></div><div class="ledger-row"><span>本周新增调休</span><strong id="weekEarned">+0m</strong></div><div class="ledger-row"><span>本周使用调休</span><strong id="weekUsed">−0m</strong></div><div class="ledger-row"><span>主动调休</span><strong id="weekActiveRest">0m</strong></div><div class="ledger-row"><span>被动抵扣</span><strong id="weekPassiveRest">0m</strong></div><div class="ledger-row" id="weekUnclassifiedRow" hidden><span>未标注性质（旧记录）</span><strong id="weekUnclassifiedRest">0m</strong></div><div class="ledger-row"><span>主动调休占比</span><strong id="weekActiveShare">0%</strong></div><p class="review-hint" id="restNatureHint" hidden></p><div class="ledger-row"><span>本周净积分</span><strong id="weekPoints">+0</strong></div><div class="rest-message" id="restMessage"></div><div class="panel-header spaced"><h3>积分明细</h3><span id="dailyCount">0 天</span></div><div id="dayBreakdown" class="day-breakdown"></div></div></div>
+        <div class="engineering-card" aria-labelledby="engineeringTitle"><div><h3 id="engineeringTitle">个人工程状态</h3><p>仅按 E · 工程时间观察；每周一重新计算，不计积分。</p></div><div class="engineering-values"><span>本周 E <strong id="engineeringActual">0m / 3h30m</strong></span><span>当前工程焦虑值 <strong id="engineeringAnxiety">0m</strong></span></div><p id="engineeringStatus" class="engineering-status">正常</p></div>
+        <div class="event-review" aria-labelledby="eventReviewTitle"><h3 id="eventReviewTitle">事务负荷与恢复</h3><div id="eventWeekSummary"></div><div id="eventWeekDays"></div><p class="fineprint">压力是事务管理代理值；高负荷与工时、加班或调休同日出现，不表示因果关系。未开始记录的日期显示“未记录”。</p></div>
+        <div class="weekly-note"><div><h3>这周有什么收获？</h3><p id="outputSummary">本周记录的专项产出：0 项</p></div><label class="sr-only" for="weeklyText">本周复盘笔记</label><textarea id="weeklyText" rows="3" placeholder="例如：R 的推进情况、阻塞原因、下周第一步……"></textarea><button type="button" class="button-secondary" id="saveWeekly">保存周复盘</button><span id="weeklyState" role="status"></span></div>
+        <div class="observation-summary"><h3>本周观察 / 异常</h3><div id="weeklyObservations" class="observation-list"></div></div>
+        <div class="week-export" aria-labelledby="exportTitle"><div><h3 id="exportTitle">导出这周给 ChatGPT</h3><p><span id="exportRange"></span> · 包含每日工时、事务链、压力历史、计划选择与复盘。按上方周切换选择要导出的周。</p></div><div class="week-export-actions"><button type="button" class="button-primary" id="copyWeekMarkdown">复制 Markdown</button><button type="button" class="button-secondary" id="downloadWeekMarkdown">下载 Markdown</button><button type="button" class="button-secondary" id="downloadWeekJson">下载 JSON</button></div><p class="week-export-note">仅导出这周的已保存记录。下载后可添加到 ChatGPT Library，或把 Markdown 直接粘贴到对话中；本站仍保持私密。</p><p id="exportState" role="status" aria-live="polite"></p></div>
+      </section>
+    </main>
+    <footer><span>科研工时 / R + E</span><span>记录同步至私密云端 · 可在“规则与数据”导出备份</span></footer>
+  </div>
+
+  <dialog id="settingsDialog" aria-labelledby="settingsTitle"><form method="dialog" class="dialog-head"><div><p class="eyebrow">YOUR RULES</p><h2 id="settingsTitle">规则与数据</h2></div><button class="icon-button" aria-label="关闭">×</button></form><div class="dialog-body"><p>以下预设依据你的日记录。修改后将重新核算所有已保存记录；专项产出的分值仍由你逐日填写。</p><div id="ruleFields" class="rules-grid"></div><h3>期初余额</h3><p>开始使用本站前已有的累计值。未核实当前余额，因此初始为零。</p><div class="rules-grid"><label>期初积分<input type="number" id="openingPoints" step="0.5" min="0"></label><label>期初调休（分钟）<input type="number" id="openingRest" step="1" min="0"></label></div><div class="dialog-actions"><button type="button" id="exportButton" class="button-secondary">导出 JSON 备份</button><label class="button-secondary import-label">导入 JSON 备份<input type="file" id="importFile" accept="application/json,.json" hidden></label></div><p class="fineprint">导入会替换云端记录与本浏览器缓存。建议先导出备份；保存成功后可在其他设备读取。</p><div class="rule-guides" aria-label="积分与调休制度说明">
+  <h3>制度说明</h3>
+  <p class="fineprint">依据你上传的《积分规则》《调休规则》整理。下面的数值是默认示例；实际核算以此页保存的参数为准。晚间扣分采用你最新确定的 00:00 分界。</p>
+  <details class="rule-guide" open><summary>积分：加分、扣分与奖励建议</summary>
+    <p>积分奖励稳定投入、科研主线与合理收工。达到工作日最低目标可得基础分；使用已积累调休时，最低目标按 7h 减去使用时长。正常休息日和工作日改休不考核工时。</p>
+    <div class="guide-table-wrap"><table><thead><tr><th>加分项目</th><th>默认分值</th><th>触发说明</th></tr></thead><tbody>
+      <tr><td>基础工时</td><td>+1</td><td>达到当日最低工作目标</td></tr><tr><td>核心时间块</td><td>+1</td><td>科研 R＋工程 E 达到计划目标</td></tr><tr><td>长期能力建设</td><td>+0.5</td><td>完成预定的系统课程、开发等</td></tr><tr><td>正常结束工作</td><td>+0.5</td><td>完成基础投入，避免不必要拖延</td></tr><tr><td>每日简短复盘</td><td>+0.5</td><td>记录时间、产出、阻塞与下一步</td></tr><tr><td>合理加班</td><td>30–59 分钟 +0.5；≥60 分钟 +1</td><td>单日加班奖励最高 +1，避免拉长工时刷分</td></tr><tr><td>专项产出</td><td>自行填写</td><td>论文、代码、测试报告等成果</td></tr>
+    </tbody></table></div>
+    <p>扣分仅适用于实际按工作日记录的日期，包括休息日调整为工作日。休息日额外工作全部计作加班、按 1/4 累计调休，不触发任何扣分；符合条件的加分仍按上表核算。工作日的扣分针对可控的工作模式：拖延导致加班、为积分制造加班、长时间注意力漂移、疲劳仍加任务、在调休警戒区继续不必要加班。新记录不因 23:00 未完成任务或 23:30 仍工作而扣分；工作到 <strong>00:00 起 −1</strong>，00:30 起和 02:00 起依本页设置递进。晚间档位只取最晚的一档，单日扣分最多 −2。</p>
+    <p>上课、组会、导师临时任务、身体不适、计划内休息、正常短暂放松，以及实验失败或 Bug 尚未解决，均不因这些客观结果扣分；P0 紧急事件可免晚间工作扣分。原文中的 23:00 与 23:30 扣分提案已被本次规则调整取代。</p>
+    <div class="guide-table-wrap"><table><thead><tr><th>累计积分</th><th>体验性奖励建议</th></tr></thead><tbody><tr><td>5 分</td><td>咖啡、甜品或小零食</td></tr><tr><td>10 分</td><td>一个无需惦记工作的娱乐晚上</td></tr><tr><td>20 分</td><td>一顿喜欢的饭或小额消费</td></tr><tr><td>30 分</td><td>半天外出、逛街或看电影</td></tr><tr><td>50 分</td><td>一件想买的小物品或一天自由活动</td></tr></tbody></table></div>
+    <p class="fineprint">奖励是额外庆祝，不是休息的许可。兑换建议不自动扣除累计积分。</p>
+  </details>
+  <details class="rule-guide"><summary>加班、调休账户与使用建议</summary>
+    <p><strong>积分奖励行为，调休偿还时间。</strong>有效加班是完成正常工作预算后，因实际任务需要继续投入的时间；夜间工作不自动等于加班。白天拖延后补工、为了积分延长任务、原计划本就安排的夜间工作均不产生调休。正常工作日超过 8h 后，请自行核对并填写有效加班分段。</p>
+    <div class="guide-table-wrap"><table><thead><tr><th>类型</th><th>默认调休入账</th><th>示例</th></tr></thead><tbody><tr><td>正常工作日有效加班</td><td>工时 × 0.5</td><td>加班 2h → +1h</td></tr><tr><td>23:30 后有效加班分段</td><td>该分段 × 1</td><td>该分段 1h → +1h</td></tr><tr><td>休息日额外工作</td><td>全部工作时间 × 0.25</td><td>额外工作 4h → +1h</td></tr></tbody></table></div>
+    <p>原文建议以 30 分钟作为加班记录的最小单位。余额可用于提前结束或晚到：工作日使用 1h 已积累调休，当天最低工作目标从 7h 降到 6h；不会因此扣基础工时分，也无需第二天补回。工作日整天调整为休息日是另一种日程状态，不消耗该账户。</p>
+    <div class="guide-table-wrap"><table><thead><tr><th>调休余额</th><th>安排建议</th></tr></thead><tbody><tr><td>0–2h</td><td>正常使用</td></tr><tr><td>超过 2h</td><td>建议近期使用</td></tr><tr><td>达到 4h</td><td>下周至少安排 1–2h</td></tr><tr><td>超过 6h</td><td>安排半天恢复</td></tr><tr><td>达到 8h</td><td>优先清偿余额，暂停非必要加班</td></tr></tbody></table></div>
+    <p>建议普通调休在产生后约 14 天内使用，以周为周期复盘新增、使用与余额。原文建议每周合理加班不超过 5h；若周总工作超过 50h，应检查任务估时、突发需求与疲劳。这里是复盘建议，并非自动扣分条款。</p>
+  </details>
+</div></div><div class="dialog-footer"><span id="settingsState" role="status"></span><button type="button" class="button-primary" id="saveSettings">保存规则</button></div></dialog>
+  <dialog id="eventDialog" class="event-dialog" aria-labelledby="eventDialogTitle">
+    <div class="dialog-head"><div><p class="eyebrow">EVENT RECORD</p><h2 id="eventDialogTitle">新增事件</h2></div><button type="button" id="closeEventDialog" class="icon-button" aria-label="关闭">×</button></div>
+    <div class="dialog-body">
+      <form id="eventForm">
+        <div class="event-form-grid">
+          <label class="wide">事件名称<input name="name" required maxlength="100" placeholder="例如：办理党员材料"></label>
+          <label class="wide">事件发生日期<input type="date" name="createdOn" required></label>
+          <label>类别<select name="category"><option value="R">R · 科研</option><option value="E">E · 工程</option><option value="P">P · 工作管理</option><option value="S">S · 自由创作</option><option value="C">C · 课程</option><option value="M">M · 汇报沟通</option><option value="A">A · 行政杂务</option></select></label>
+          <label>优先级<select name="priority"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
+          <label>初始压力等级<select name="pressure"><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label>
+          <label>初始可协调性<select name="coordinatable"><option value="unknown">暂不确定</option><option value="yes">是</option><option value="no">否</option></select></label>
+          <label>初始状态<select name="status"><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label>
+          <label>截止日期（可不填）<input type="date" name="deadline"></label>
+          <label class="wide">初始进展 / 初始节点<input name="currentStep" maxlength="300" placeholder="例如：完善界面"></label>
+          <label>认知强度<select name="cognitive"><option value="unknown">不确定</option><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></label>
+          <label class="wide">备注<textarea name="notes" rows="2"></textarea></label>
+        </div>
+        <p class="fineprint" id="initialProgressHelp">这里只填写初始进展。之后每次新增进展，原当前进展直接归档。</p>
+        <p class="fineprint" id="eventDateHelp"></p>
+        <p class="fineprint">H 记录工作之外的持续牵挂、等待与注意力中断，不按工作时长或重要性自动计分。</p>
+        <fieldset class="event-conditions"><legend>影响压力的条件（可选）</legend><div id="eventConditionFields"></div></fieldset>
+        <p id="eventPressureHint" class="event-hint"></p>
+        <details class="event-guide"><summary>查看该类别 H0—H3 对标</summary><div id="eventCategoryGuide"></div></details>
+        <label class="event-cancel" id="eventDispositionField" hidden>结束方式<select name="endDisposition"><option value="completed">已完成</option><option value="canceled">取消</option></select></label>
+        <label class="event-cancel" id="eventCancelField" hidden>取消原因<input name="closeReason" placeholder="说明取消原因" maxlength="300"></label>
+        <div class="dialog-actions"><button type="submit" class="button-primary">保存事件</button><span id="eventFormState" role="status"></span></div>
+      </form>
+      <button type="button" class="button-secondary" id="markCoordinated" hidden>标记已沟通协调</button>
+    </div>
+  </dialog>
+  <dialog id="progressDialog" class="event-dialog" aria-labelledby="progressDialogTitle">
+    <div class="dialog-head"><div><p class="eyebrow">EVENT PROGRESS</p><h2 id="progressDialogTitle">推进事件进展</h2></div><button type="button" id="closeProgressDialog" class="icon-button" aria-label="关闭">×</button></div>
+    <div class="dialog-body">
+      <p id="progressEventName" class="fineprint"></p>
+      <form id="progressForm">
+        <label class="progress-primary">新增的当前进展<input name="newStep" required maxlength="300" placeholder="本次推进到了哪一步？"></label>
+        <p id="progressStepHint" class="fineprint"></p>
+        <div id="progressChain" class="event-chain"></div>
+        <label>进展发生日期<input type="date" name="effectiveOn" required></label>
+        <div class="progress-state-fields">
+          <label>压力等级<select name="pressure"><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label>
+          <label>状态<select name="status"><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label>
+          <label>可协调性<select name="coordinatable"><option value="unknown">暂不确定</option><option value="yes">可协调</option><option value="no">不可协调</option></select></label>
+        </div>
+        <label id="progressDispositionField" hidden>结束方式<select name="endDisposition"><option value="completed">已完成</option><option value="canceled">取消</option></select></label>
+        <label id="progressCancelField" hidden>取消原因<input name="closeReason" maxlength="300" placeholder="说明取消原因"></label>
+        <p class="fineprint">保存后，新进展直接成为<strong>当前节点</strong>；原当前节点进入历史。这三项属于新节点，原节点结束时的状态会留在历史中。</p>
+        <div class="dialog-actions"><button type="submit" class="button-primary" id="progressSubmit">归档原节点并保存新进展</button><span id="progressState" role="status"></span></div>
+      </form>
+    </div>
+  </dialog>
+  <dialog id="stageDialog" class="event-dialog" aria-labelledby="stageDialogTitle">
+    <div class="dialog-head"><div><p class="eyebrow">NODE STATUS</p><h2 id="stageDialogTitle">更正进展节点状态</h2></div><button type="button" id="closeStageDialog" class="icon-button" aria-label="关闭">×</button></div>
+    <div class="dialog-body">
+      <p id="stageEventName" class="fineprint"></p>
+      <p class="fineprint">选择初始、历史或当前节点，更正该节点的压力、状态和可协调性。这里不会新增进展或改写进展文字；后续已单独记录的节点仍保留自己的状态。</p>
+      <form id="stageForm">
+        <label>选择要更正的进展节点<select id="stagePicker" aria-label="选择要更正的进展节点"></select></label>
+        <p id="stagePreview" class="event-hint"></p>
+        <div class="progress-state-fields">
+          <label>压力等级<select name="pressure"><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label>
+          <label>状态<select name="status"><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label>
+          <label>可协调性<select name="coordinatable"><option value="unknown">暂不确定</option><option value="yes">可协调</option><option value="no">不可协调</option></select></label>
+        </div>
+        <label id="stageDispositionField" hidden>结束方式<select name="endDisposition"><option value="completed">已完成</option><option value="canceled">取消</option></select></label>
+        <label id="stageCancelField" hidden>取消原因<input name="closeReason" maxlength="300" placeholder="说明取消原因"></label>
+        <div class="dialog-actions"><button type="submit" class="button-primary">保存节点状态更正</button><span id="stageState" role="status"></span></div>
+      </form>
+      <details id="stageHistory" class="event-guide"><summary>历史更正说明与记录（可选）</summary>
+        <form id="correctionForm"><label>更正历史节点<select name="nodeId" id="correctionNode"></select></label><label>更正说明<input name="note" placeholder="说明原记录哪里不准确" maxlength="300"></label><button type="submit" class="button-secondary">追加更正记录</button></form>
+        <div id="eventChanges"></div>
+      </details>
+    </div>
+  </dialog>
+</body>
+</html>
