@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import worker from './worker/index.mjs';
 import {removeContaminatedEvent} from './event-cleanup.mjs';
+import {createEvent,advanceEvent,eventsAtDate,pressureAt} from './events.mjs';
 
 function environment(){
   const sqlite = new DatabaseSync(':memory:');
@@ -43,6 +44,23 @@ test('event state persists alongside existing work logs without changing old fie
   assert.deepEqual(loaded.events,enriched.events);
   assert.deepEqual(loaded.eventDays,enriched.eventDays);
   assert.deepEqual(loaded.days,sample.days);
+});
+
+test('backfilled chain survives API persistence and a fresh read without changing work logs',async()=>{
+  const env=environment(),recorded='2026-10-20T04:00:00.000Z';
+  let event=createEvent({name:'工程链',category:'E',createdOn:'2026-10-12',pressure:1,status:'doing',currentStep:'A'},recorded);
+  event=advanceEvent(event,'B',{effectiveOn:'2026-10-14',pressure:2},recorded);
+  event=advanceEvent(event,'C',{effectiveOn:'2026-10-15',pressure:2},recorded);
+  event=advanceEvent(event,'D',{effectiveOn:'2026-10-13',pressure:3},recorded);
+  const state={...sample,events:[event],eventDays:{'2026-10-13':{energy:'tired'}}};
+  const saved=await worker.fetch(request('PUT',{state,expectedRevision:0}),env);
+  assert.equal(saved.status,200);
+  const fresh=(await (await worker.fetch(request(),env)).json()).state;
+  assert.deepEqual(fresh.days,sample.days);
+  assert.deepEqual(fresh.eventDays,state.eventDays);
+  assert.deepEqual(fresh.events[0].nodes.map(node=>node.text),['A','D','B']);
+  assert.deepEqual(['2026-10-12','2026-10-13','2026-10-14','2026-10-15'].map(date=>eventsAtDate(fresh.events,date)[0].currentStep),['A','D','B','C']);
+  assert.equal(pressureAt(fresh.events,'2026-10-15','2026-10-20').end,2);
 });
 
 test('the exact contaminated old event is removed from cloud state and cannot return from a stale save',async()=>{

@@ -52,7 +52,7 @@
 
       <section class="workspace event-workspace" id="eventsSection" aria-labelledby="eventsTitle">
         <div class="section-heading"><div><p class="eyebrow">02 / EVENTS & RECOVERY</p><h2 id="eventsTitle">事务与压力管理</h2><p>记录事务的持续牵挂、进展和可调整空间。压力只用于复盘，不计入工时或积分。</p></div><button type="button" class="button-primary" id="newEvent">新增事件</button></div>
-        <div class="event-layout"><div class="event-list-panel"><div class="panel-header"><h3>事件列表</h3><span id="eventCount">0 项</span></div><p id="eventListDate" class="event-date-caption"></p><div class="event-filters"><label>类别<select id="filterCategory"><option value="">全部</option><option>R</option><option>E</option><option>P</option><option>S</option><option>C</option><option>M</option><option>A</option></select></label><label>优先级<select id="filterPriority"><option value="">全部</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label><label>压力<select id="filterPressure"><option value="">全部</option><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label><label>状态<select id="filterStatus"><option value="">全部</option><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label><label>可协调<select id="filterCoordination"><option value="">全部</option><option value="yes">是</option><option value="no">否</option><option value="unknown">暂不确定</option></select></label></div><div id="eventCards" class="event-cards"></div><p id="eventActionState" role="status"></p></div>
+        <div class="event-layout"><div class="event-list-panel"><div class="panel-header"><h3>事件列表</h3><span id="eventCount">0 项</span></div><p id="eventListDate" class="event-date-caption"></p><div class="event-filters"><label>类别<select id="filterCategory"><option value="">全部</option><option>R</option><option>E</option><option>P</option><option>S</option><option>C</option><option>M</option><option>A</option></select></label><label>优先级<select id="filterPriority"><option value="">全部</option><option>P0</option><option>P1</option><option>P2</option><option>P3</option></select></label><label>压力<select id="filterPressure"><option value="">全部</option><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label><label>状态<select id="filterStatus"><option value="">全部</option><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label><label>可协调<select id="filterCoordination"><option value="">全部</option><option value="yes">是</option><option value="no">否</option><option value="unknown">暂不确定</option></select></label></div><div id="eventCards" class="event-cards"></div><p id="eventActionState" role="status"></p><details id="eventArchive" class="event-archive"><summary>查询历史归档 <span id="archiveCount">0 项</span></summary><p class="fineprint">仅从日常列表隐藏。可按名称或完成日期查找，记录与压力历史仍完整保存。</p><div class="archive-filters"><label>搜索事件<input id="archiveQuery" type="search" placeholder="名称、节点或备注"></label><label>完成日期起<input id="archiveFrom" type="date"></label><label>至<input id="archiveTo" type="date"></label></div><div id="archiveCards" class="event-cards"></div></details></div>
         <div class="event-support"><div class="event-support-card" id="recommendations"><h3 id="recommendTitle">现在怎么安排</h3><p id="recommendContext"></p><div id="recommendContent"></div><p id="recommendRecovery"></p><button type="button" class="button-secondary" id="confirmOriginalPlan" hidden>将当前选择固定为原计划</button></div><div class="event-support-card" id="todayEventPanel"><h3 id="todayPlanTitle">今日计划</h3><p id="eventDayDate"></p><label>当前精力状态（可选）<select id="eventEnergy"><option value="">未记录</option><option value="high">精力充足</option><option value="normal">正常</option><option value="tired">疲劳</option><option value="exhausted">明显疲惫</option></select></label><div class="plan-display"><h4>原计划</h4><div id="originalPlan"></div><h4>当前计划</h4><div id="plannedEvents"></div><p id="planChanges" class="fineprint"></p></div><div class="plan-evaluation"><h4>计划压力评估</h4><div id="planAssessment"></div></div><p id="eventDayState" role="status"></p></div></div></div>
       </section>
 
@@ -129,6 +129,7 @@
         <p id="progressStepHint" class="fineprint"></p>
         <div id="progressChain" class="event-chain"></div>
         <label>进展发生日期<input type="date" name="effectiveOn" required></label>
+        <label>插入位置（同日有多个节点时可指定）<select name="beforeStageId" id="progressPosition"><option value="">按日期追加</option></select></label>
         <div class="progress-state-fields">
           <label>压力等级<select name="pressure"><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label>
           <label>状态<select name="status"><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label>
@@ -145,10 +146,11 @@
     <div class="dialog-head"><div><p class="eyebrow">NODE STATUS</p><h2 id="stageDialogTitle">更正进展节点状态</h2></div><button type="button" id="closeStageDialog" class="icon-button" aria-label="关闭">×</button></div>
     <div class="dialog-body">
       <p id="stageEventName" class="fineprint"></p>
-      <p class="fineprint">选择初始、历史或当前节点，更正该节点的压力、状态和可协调性。这里不会新增进展或改写进展文字；后续已单独记录的节点仍保留自己的状态。</p>
+      <p class="fineprint">选择初始、历史或当前节点，更正描述、压力、状态和可协调性。更正不会新增节点，也不会改变节点时间或后续进展。</p>
       <form id="stageForm">
         <label>选择要更正的进展节点<select id="stagePicker" aria-label="选择要更正的进展节点"></select></label>
         <p id="stagePreview" class="event-hint"></p>
+        <label>节点描述<input name="currentStep" maxlength="300" required placeholder="该节点实际做了什么"></label>
         <div class="progress-state-fields">
           <label>压力等级<select name="pressure"><option value="0">H0</option><option value="1">H1</option><option value="2">H2</option><option value="3">H3</option></select></label>
           <label>状态<select name="status"><option value="todo">待处理</option><option value="doing">处理中</option><option value="waiting">等待外部</option><option value="paused">暂缓</option><option value="ended">已结束</option></select></label>
@@ -156,7 +158,7 @@
         </div>
         <label id="stageDispositionField" hidden>结束方式<select name="endDisposition"><option value="completed">已完成</option><option value="canceled">取消</option></select></label>
         <label id="stageCancelField" hidden>取消原因<input name="closeReason" maxlength="300" placeholder="说明取消原因"></label>
-        <div class="dialog-actions"><button type="submit" class="button-primary">保存节点状态更正</button><span id="stageState" role="status"></span></div>
+        <div class="dialog-actions"><button type="submit" class="button-primary">保存节点更正</button><span id="stageState" role="status"></span></div>
       </form>
       <details id="stageHistory" class="event-guide"><summary>历史更正说明与记录（可选）</summary>
         <form id="correctionForm"><label>更正历史节点<select name="nodeId" id="correctionNode"></select></label><label>更正说明<input name="note" placeholder="说明原记录哪里不准确" maxlength="300"></label><button type="submit" class="button-secondary">追加更正记录</button></form>

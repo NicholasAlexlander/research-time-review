@@ -1,7 +1,7 @@
 import {formatMinutes,shiftDate} from './calc.mjs';
 import {categoryGuides,eventStatuses,coordinationLabels,energyLabels,conditionLabels,
   activeEvents,currentPressure,pressureAt,pressureBand,pressureHint,createEvent,changeEvent,updateEventInfo,
-  advanceEvent,reviseStage,stageAtDate,progressForStage,correctNode,markCoordinated,recommendEvents,eventWeekSummary,
+  advanceEvent,previewProgressInsertion,reviseStage,stageAtDate,progressForStage,correctNode,markCoordinated,recommendEvents,eventWeekSummary,
   eventsAtDate,eventListAtDate,eventStartDate} from './events.mjs';
 import {analyzeDailyPlan} from './plan.mjs';
 
@@ -16,15 +16,16 @@ const stageMeta=value=>`<span class="event-stage-meta">压力 ${value.pressure==
 export function eventCardMarkup(e,{historical=false}={}){
   const ended=e.status==='ended';
   const nodes=e.nodes||[],older=nodes.slice(0,-3),recent=nodes.slice(-3);
-  const nodeMarkup=node=>`<li class="event-chain-step completed"><span class="chain-marker">✓</span><div><small>已完成 · ${esc(completedAt(node.completedAt))}</small><span>${esc(node.text)}</span>${stageMeta(node)}</div></li>`;
+  const nodeMarkup=node=>`<li class="event-chain-step completed"><span class="chain-marker">✓</span><div><small>已完成 · ${esc(completedAt(node.completedAt))}${node.recordedAt&&node.recordedAt!==node.completedAt?` · 录入于 ${esc(completedAt(node.recordedAt))}`:''}</small><span>${esc(node.text)}</span>${stageMeta(node)}</div></li>`;
+  const current=e.history?.findLast(change=>change.kind==='create'||change.kind==='advance');
   const chain=`<div class="event-chain" aria-label="${esc(e.name)}的链式进展">
     <div class="event-chain-title"><strong>链式进展</strong><span>${ended?`已结束 · 共 ${nodes.length+1} 个阶段`:`已完成 ${nodes.length} 个阶段`}</span></div>
     ${older.length?`<details class="event-chain-older"><summary>查看较早的 ${older.length} 个节点</summary><ol class="event-chain-list">${older.map(nodeMarkup).join('')}</ol></details>`:''}
     <ol class="event-chain-list">${recent.map(nodeMarkup).join('')}
-      <li class="event-chain-step ${ended?'ended':'current'}"><span class="chain-marker">${ended?'✓':'●'}</span><div><small>${ended?'已结束':'当前进展'}</small><strong>${esc(e.currentStep||'待明确')}</strong>${stageMeta(e)}</div></li>
+      <li class="event-chain-step ${ended?'ended':'current'}"><span class="chain-marker">${ended?'✓':'●'}</span><div><small>${ended?'已结束':'当前进展'}</small><strong>${esc(e.currentStep||'待明确')}</strong>${current?.recordedAt&&current.recordedAt!==current.at?`<small>生效于 ${esc(completedAt(current.at))} · 录入于 ${esc(completedAt(current.recordedAt))}</small>`:''}${stageMeta(e)}</div></li>
       ${ended?'':'<li class="event-chain-step next"><span class="chain-marker">→</span><div><small>下一步行动（留空）</small><span>—</span></div></li>'}
     </ol>
-    <div class="event-card-actions">${ended?'':`<button type="button" class="button-primary" data-action="progress" data-id="${esc(e.id)}">新增／补录进展</button>`}<button type="button" class="button-secondary" data-action="stage" data-id="${esc(e.id)}">更正节点状态</button><button type="button" class="button-secondary" data-action="edit" data-id="${esc(e.id)}">编辑事件信息</button></div>
+    <div class="event-card-actions">${ended?`<button type="button" class="button-secondary" data-action="history" data-id="${esc(e.id)}">补录历史进展</button>`:`<button type="button" class="button-primary" data-action="progress" data-id="${esc(e.id)}">新增／补录进展</button>`}<button type="button" class="button-secondary" data-action="stage" data-id="${esc(e.id)}">更正节点内容与状态</button><button type="button" class="button-secondary" data-action="edit" data-id="${esc(e.id)}">编辑事件信息</button></div>
   </div>`;
   return `<article class="event-card ${Number(e.pressure)===3&&e.status!=='ended'?'event-h3':''}" data-id="${esc(e.id)}">
     <div class="event-card-head"><button type="button" data-action="edit" data-id="${esc(e.id)}">${esc(e.name)}</button><span>${esc(e.category)} · ${esc(e.priority)}</span></div>
@@ -90,6 +91,19 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
     $('eventCards').innerHTML=visible.length?visible.map(event=>eventCardMarkup(event,{historical})).join(''):
       `<p class="empty-days">${date>localDate()?'未来日期尚无已发生的事件。':'该日期尚无事件或没有符合筛选条件的事件。可用“新增事件”补录当天发生的事务。'}</p>`;
   }
+  function renderArchive(){
+    const today=localDate(),shown=new Set(eventListAtDate(events(),today).map(event=>event.id));
+    const archived=eventsAtDate(events(),today).filter(event=>event.status==='ended'&&!shown.has(event.id));
+    $('archiveCount').textContent=`${archived.length} 项`;
+    const query=$('archiveQuery').value.trim().toLocaleLowerCase(),from=$('archiveFrom').value,to=$('archiveTo').value;
+    const matches=archived.filter(event=>{
+      const closed=event.closedAt?dateOf(event.closedAt):'';
+      const search=[event.name,event.currentStep,event.notes,...(event.nodes||[]).map(node=>node.text)].join(' ').toLocaleLowerCase();
+      return (!query||search.includes(query))&&(!from||closed>=from)&&(!to||closed<=to);
+    }).sort((a,b)=>(b.closedAt||'').localeCompare(a.closedAt||''));
+    $('archiveCards').innerHTML=matches.length?`${matches.slice(0,20).map(event=>eventCardMarkup(event)).join('')}${matches.length>20?`<p class="fineprint">显示前 20 项，共 ${matches.length} 项；可缩小日期或关键词范围。</p>`:''}`:
+      '<p class="empty-days">没有符合条件的归档事件。</p>';
+  }
   function context(){
     const day=selectedDay(),date=getSelected(),row=pressureAt(events(),date),available=visibleOnDate();
     const load=row.load;
@@ -97,15 +111,15 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
     return {date,load,residual:row.residual,row,chronicSources:row.chronicSources||[],available,energy:day.energy||'normal',lateNight,day};
   }
   function renderRecommendations(){
-    const ctx=context(),recs=recommendEvents(ctx.available,ctx),planned=new Set(ctx.day.plannedEventIds||[]),future=ctx.date>localDate();
-    const assessment=analyzeDailyPlan(ctx.available,[...planned],ctx.row,{energy:ctx.day.energy,lateNight:ctx.lateNight});
+    const ctx=context(),recs=recommendEvents(ctx.available,ctx),planned=new Set(ctx.day.plannedEventIds||[]),candidates=new Set(ctx.day.candidateEventIds||[]),future=ctx.date>localDate();
+    const assessment=analyzeDailyPlan(ctx.available,[...planned],ctx.row,{energy:ctx.day.energy,lateNight:ctx.lateNight,candidateIds:[...candidates]});
     $('recommendTitle').textContent=ctx.date===localDate()?'现在怎么安排':`${ctx.date} 的事务安排`;
     $('recommendContext').textContent=`${ctx.date} · 整体负荷 ${number(ctx.load)} · 当前计划压力 ${number(assessment.planLoad)}（${assessment.label}） · 精力 ${ctx.day.energy?energyLabels[ctx.energy]:'未记录'}${ctx.lateNight?' · 近期有深夜工作':''}${future?' · 未来日期不提供压力估计':''}`;
     const tiers=['优先推进','先处理阻塞','近期推进','按状态推进','建议暂缓','等待与暂缓'];
     $('recommendContent').innerHTML=recs.ranked.length?`<div class="recommend-list-intro">依照期限、优先级和当前进展排列；排名只是安排参考，不代表必须全部完成。${esc(assessment.action)}</div><ol class="ranked-events">${recs.ranked.map((item,index)=>`
-      <li class="recommend-item"><div class="recommend-heading"><span class="recommend-rank">${index+1}</span><div><strong>${esc(item.name)}</strong><span class="recommend-tier">${esc(tiers[item.tier])} · ${esc(item.priority)} / H${item.pressure}${planned.has(item.eventId)?' · 已加入计划':''}</span></div></div>
+      <li class="recommend-item"><div class="recommend-heading"><span class="recommend-rank">${index+1}</span><div><strong>${esc(item.name)}</strong><span class="recommend-tier">${esc(tiers[item.tier])} · ${esc(item.priority)} / H${item.pressure}${planned.has(item.eventId)?candidates.has(item.eventId)?' · 候补':' · 正式计划':''}</span></div></div>
         <p class="recommend-reasons">依据：${esc(item.reasons.join(' · '))}</p><p>当前进展：${esc(item.step||'待明确')}</p><p class="recommend-action">建议：${esc(item.action)}</p>
-        <button type="button" class="button-secondary" data-plan-toggle="${planned.has(item.eventId)?'remove':'add'}" data-event-id="${esc(item.eventId)}" ${future?'disabled':''}>${planned.has(item.eventId)?'取消所选日期计划':'加入所选日期计划'}</button></li>`).join('')}</ol>`:'<p class="empty-days">所选日期没有未结束的事件。</p>';
+        <button type="button" class="button-secondary" data-plan-toggle="${planned.has(item.eventId)?'remove':'add'}" data-event-id="${esc(item.eventId)}" ${future?'disabled':''}>${planned.has(item.eventId)?'取消所选日期计划':'加入所选日期计划'}</button>${planned.has(item.eventId)?` <button type="button" class="button-secondary" data-plan-toggle="${candidates.has(item.eventId)?'formal':'candidate'}" data-event-id="${esc(item.eventId)}" ${future?'disabled':''}>${candidates.has(item.eventId)?'转为正式计划':'设为候补'}</button>`:''}</li>`).join('')}</ol>`:'<p class="empty-days">所选日期没有未结束的事件。</p>';
     const represented=new Set(recs.ranked.map(item=>item.eventId));
     const stale=[...planned].filter(id=>!represented.has(id));
     if(stale.length)$('recommendContent').insertAdjacentHTML('beforeend',`<div class="recommend-group"><h4>计划中但当前不再推荐</h4>${stale.map(id=>`<div class="recommend-item"><strong>${esc(ctx.available.find(event=>event.id===id)?.name||find(id)?.name||'已结束的事件')}</strong><p>事件已结束或该日期尚未生效，可从计划中移出。</p><button type="button" class="button-secondary" data-plan-toggle="remove" data-event-id="${esc(id)}" ${future?'disabled':''}>取消所选日期计划</button></div>`).join('')}</div>`);
@@ -115,16 +129,17 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   }
   function renderDay(){
     const date=getSelected(),day=selectedDay(),available=visibleOnDate(),ctx=context();
-    const assessment=analyzeDailyPlan(available,day.plannedEventIds||[],ctx.row,{energy:day.energy,lateNight:ctx.lateNight});
+    const candidates=new Set(day.candidateEventIds||[]);
+    const assessment=analyzeDailyPlan(available,day.plannedEventIds||[],ctx.row,{energy:day.energy,lateNight:ctx.lateNight,candidateIds:[...candidates]});
     $('todayPlanTitle').textContent=date===localDate()?'今日计划':`${date} 的计划`;
     $('eventDayDate').textContent=`${date} · 只根据本日已发生的事件与历史压力评估；不影响工时或积分`;
     $('eventEnergy').value=day.energy||'';
     $('eventEnergy').disabled=date>localDate();
     const eventName=id=>esc(available.find(event=>event.id===id)?.name||'当日未生效事件');
-    $('originalPlan').innerHTML=day.initialPlanEventIds?day.initialPlanEventIds.length?day.initialPlanEventIds.map(id=>`<span class="plan-chip">${eventName(id)}</span>`).join(''):'<p class="empty-days">原计划为空</p>':'<p class="empty-days">尚未确认原计划；可在“现在怎么安排”选好事件后固定。</p>';
-    $('plannedEvents').innerHTML=(day.plannedEventIds||[]).length?day.plannedEventIds.map(id=>`<span class="plan-chip">${eventName(id)}</span>`).join(''):'<p class="empty-days">目前没有选择要处理的事件。</p>';
-    $('planAssessment').innerHTML=`<div class="plan-assessment-head"><strong>${date>localDate()?'尚未到该日期':esc(assessment.label)}</strong><span>所选 H 合计 ${assessment.selectedPressure} · 所选持续负荷 ${assessment.selectedChronic} · 计划压力 ${number(assessment.planLoad)} · 整体负荷 ${number(assessment.overallLoad)}</span></div>
-      <p>计划压力 = 压力残留 ${number(assessment.residual)} + 所选事件 H ${assessment.selectedPressure} + 所选持续负荷 ${assessment.selectedChronic}；整体负荷还包含未选事件${assessment.unselectedPressure===null?'（记录不足）':` H ${assessment.unselectedPressure}`}及其持续负荷。</p>
+    $('originalPlan').innerHTML=day.initialPlanEventIds?day.initialPlanEventIds.length?day.initialPlanEventIds.map(id=>`<span class="plan-chip">${eventName(id)}${(day.initialCandidateEventIds||[]).includes(id)?' · 候补':''}</span>`).join(''):'<p class="empty-days">原计划为空</p>':'<p class="empty-days">尚未确认原计划；可在“现在怎么安排”选好事件后固定。</p>';
+    $('plannedEvents').innerHTML=(day.plannedEventIds||[]).length?day.plannedEventIds.map(id=>`<span class="plan-chip">${eventName(id)} · ${candidates.has(id)?'候补':'正式'}</span>`).join(''):'<p class="empty-days">目前没有选择要处理的事件。</p>';
+    $('planAssessment').innerHTML=`<div class="plan-assessment-head"><strong>${date>localDate()?'尚未到该日期':esc(assessment.label)}</strong><span>正式计划 H ${assessment.selectedPressure} · 候补 H ${assessment.candidatePressure} · 计划压力 ${number(assessment.planLoad)} · 整体负荷 ${number(assessment.overallLoad)}</span></div>
+      <p>计划压力 = 压力残留 ${number(assessment.residual)} + 正式计划 H ${assessment.selectedPressure} + 正式计划持续负荷 ${assessment.selectedChronic}；候补仍计入整体事件压力，整体负荷 ${number(assessment.overallLoad)} 不因候补标记而改变。</p>
       ${assessment.reasons.length?`<ul>${assessment.reasons.map(reason=>`<li>${esc(reason)}</li>`).join('')}</ul>`:''}<p class="plan-action">${esc(assessment.action)}</p>`;
     $('planChanges').textContent=(day.planChanges||[]).length?`计划选择已变更 ${(day.planChanges||[]).length} 次。原计划与当前计划分开展示。`:'';
   }
@@ -142,7 +157,7 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
       <p>高负荷时选择的事件：${summary.highLoadPlans.filter(x=>x.plannedEventIds.length).map(x=>`${short(x.date)} ${x.plannedEventIds.map(id=>esc(eventsAtDate(events(),x.date).find(event=>event.id===id)?.name||'该日未生效事件')).join('、')}`).join('；')||'暂无'}。</p>`;
     $('eventWeekDays').innerHTML=`<div class="event-day-table"><div class="event-day-head"><span>日期</span><span>峰值</span><span>日末</span><span>残留</span><span>持续</span><span>综合</span></div>${summary.rows.map(r=>`<div><span>${short(r.date)}</span><span>${r.recorded?r.peak:'未记录'}</span><span>${r.recorded?r.end:'—'}</span><span>${r.recorded?number(r.residual):'—'}</span><span>${r.recorded?number(r.chronic):'—'}</span><span>${r.recorded?number(r.load):'—'}</span></div>`).join('')}</div>`;
   }
-  function render(){renderOverview();renderCards();renderRecommendations();renderDay();renderWeek()}
+  function render(){renderOverview();renderCards();renderArchive();renderRecommendations();renderDay();renderWeek()}
 
   function readForm(){
     const conditions=Object.fromEntries(Object.keys(conditionLabels).map(k=>[k,!!form.querySelector(`[name="condition-${k}"]`)?.checked]));
@@ -189,12 +204,13 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   function openProgress(id){
     if(progressBusy)return;
     const event=find(id);if(!event)return;
-    if(eventsAtDate([event],getSelected())[0]?.status==='ended')return;
     progressId=id;$('progressForm').reset();$('progressState').textContent='';
     $('progressEventName').textContent=event.name;
     const dateField=$('progressForm').elements.namedItem('effectiveOn');
     dateField.min=eventStartDate(event);dateField.max=localDate();
-    dateField.value=getSelected()>=eventStartDate(event)&&getSelected()<=localDate()?getSelected():localDate();
+    const selected=getSelected()>=eventStartDate(event)&&getSelected()<=localDate()?getSelected():localDate();
+    const closed=event.status==='ended'&&event.closedAt?dateOf(event.closedAt):'';
+    dateField.value=closed&&selected>=closed&&shiftDate(closed,-1)>=eventStartDate(event)?shiftDate(closed,-1):selected;
     renderProgressDate();
     $('progressDialog').showModal();
     $('progressForm').elements.namedItem('newStep').focus();
@@ -213,13 +229,14 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
     $('stageHistory').hidden=!(event.nodes||[]).length&&!(event.corrections||[]).length;
     $('stageHistory').open=false;
     $('eventChanges').innerHTML=(event.history||[]).map(x=>`<p>${esc(x.at)} · ${esc(x.kind)} · H${esc(x.snapshot.pressure)} · ${esc(eventStatuses[x.snapshot.status]||x.snapshot.status)}</p>`).join('')+
-      (event.corrections||[]).map(x=>`<p>${esc(x.at)} · 更正：${esc(x.note)}</p>`).join('');
+      (event.corrections||[]).map(x=>`<p>${esc(x.at)} · 更正：${esc(x.oldText!==undefined?`${x.oldText} → ${x.newText}`:x.note)}</p>`).join('');
     renderStageSelection();
     $('stageDialog').showModal();
   }
   function readStageValues(form){
     const input=form.elements,status=input.namedItem('status').value;
     return {pressure:Number(input.namedItem('pressure').value),status,coordinatable:input.namedItem('coordinatable').value,
+      ...(input.namedItem('currentStep')?{currentStep:input.namedItem('currentStep').value.trim()}:{}),
       endDisposition:status==='ended'?input.namedItem('endDisposition').value:null,
       closeReason:status==='ended'?input.namedItem('closeReason').value.trim():''};
   }
@@ -240,7 +257,9 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
     const event=find(stageEditingId),change=event?.history?.find(item=>item.id===$('stagePicker').value);
     if(!event||!change)return;
     const selected=change.snapshot||{},fields=$('stageForm').elements;
-    $('stagePreview').textContent=`${change.kind==='create'?'初始节点':'进展节点'} · ${completedAt(change.at)} · 当前进展：${progressForStage(event,change.id)?.currentStep||'待明确'}`;
+    const step=progressForStage(event,change.id)?.currentStep||'';
+    $('stagePreview').textContent=`${change.kind==='create'?'初始节点':'进展节点'} · ${completedAt(change.at)} · 仅更正所选节点`;
+    fields.namedItem('currentStep').value=step;
     for(const key of ['pressure','status','coordinatable'])fields.namedItem(key).value=selected[key]??(key==='pressure'?0:key==='status'?'todo':'unknown');
     fields.namedItem('endDisposition').value=selected.endDisposition||'completed';
     fields.namedItem('closeReason').value=selected.closeReason||'';
@@ -249,18 +268,26 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   function renderProgressDate(){
     const event=find(progressId),date=$('progressForm').elements.namedItem('effectiveOn').value;
     if(!event||!date)return;
-    const historical=eventsAtDate([event],date)[0];
-    const fields=$('progressForm').elements;
-    for(const key of ['pressure','status','coordinatable'])fields.namedItem(key).value=historical?.[key]??(key==='pressure'?0:key==='status'?'todo':'unknown');
-    fields.namedItem('endDisposition').value=historical?.endDisposition||'completed';
-    fields.namedItem('closeReason').value=historical?.closeReason||'';
+    const picker=$('progressPosition'),priorChoice=picker.value;
+    const ordered=[...(event.history||[])].sort((a,b)=>a.at.localeCompare(b.at)||(a.order??0)-(b.order??0));
+    const choices=ordered.filter((change,index)=>(change.kind==='advance'||
+      change.snapshot.status==='ended'&&ordered[index-1]?.snapshot.status!=='ended')&&dateOf(change.at)>=date);
+    picker.innerHTML='<option value="">按日期追加到当日末尾</option>'+choices.map(change=>
+      `<option value="${esc(change.id)}">在 ${esc(change.kind==='advance'?`进展「${change.snapshot.currentStep}」`:'结束状态')}（${completedAt(change.at)}）之前</option>`).join('');
+    picker.value=choices.some(change=>change.id===priorChoice)?priorChoice:'';
+    let point;
+    try{point=previewProgressInsertion(event,date,picker.value)}
+    catch(error){$('progressStepHint').textContent=error.message;$('progressSubmit').disabled=true;$('progressChain').innerHTML='';return}
+    const base=point.base,fields=$('progressForm').elements;
+    for(const key of ['pressure','status','coordinatable'])fields.namedItem(key).value=base?.[key]??(key==='pressure'?0:key==='status'?'todo':'unknown');
+    fields.namedItem('endDisposition').value=base?.endDisposition||'completed';
+    fields.namedItem('closeReason').value=base?.closeReason||'';
     renderProgressEnding();
-    $('progressChain').innerHTML=historical?`<ol class="event-chain-list">${(historical.nodes||[]).map(node=>`<li class="event-chain-step completed"><span class="chain-marker">✓</span><div><small>已完成 · ${esc(completedAt(node.completedAt))}</small><span>${esc(node.text)}</span>${stageMeta(node)}</div></li>`).join('')}<li class="event-chain-step ${historical.status==='ended'?'ended':'current'}"><span class="chain-marker">${historical.status==='ended'?'✓':'●'}</span><div><small>${historical.status==='ended'?'已结束':'当前进展'}</small><strong>${esc(historical.currentStep||'待明确')}</strong>${stageMeta(historical)}</div></li>${historical.status==='ended'?'':'<li class="event-chain-step next"><span class="chain-marker">→</span><div><small>下一步行动（留空）</small><span>—</span></div></li>'}</ol>`:'<p>该日期之前事件尚未发生。</p>';
-    const lastAdvance=(event.history||[]).filter(change=>change.kind==='advance').sort((a,b)=>a.at.localeCompare(b.at)).at(-1);
-    const hasLaterStage=!!lastAdvance&&dateOf(lastAdvance.at)>date;
-    $('progressStepHint').textContent=historical?.status==='ended'?'当前节点已结束；若需继续，请先在“更正节点状态”中修改此节点。':`原当前进展“${historical?.currentStep||'待明确'}”将成为历史节点；本次填写的内容直接成为新的当前进展。${hasLaterStage?'此日期之后已有进展，新节点将插入其前，后续已填写的进展文字保持不变。':''}`;
+    const previous=(event.nodes||[]).filter(node=>point.history.findIndex(change=>change.id===node.transitionId)<point.insert&&point.history.some(change=>change.id===node.transitionId));
+    $('progressChain').innerHTML=base?`<ol class="event-chain-list">${previous.map(node=>`<li class="event-chain-step completed"><span class="chain-marker">✓</span><div><small>已完成 · ${esc(completedAt(node.completedAt))}</small><span>${esc(node.text)}</span>${stageMeta(node)}</div></li>`).join('')}<li class="event-chain-step ${base.status==='ended'?'ended':'current'}"><span class="chain-marker">${base.status==='ended'?'✓':'●'}</span><div><small>${base.status==='ended'?'已结束':'插入前的进展'}</small><strong>${esc(base.currentStep||'待明确')}</strong>${stageMeta(base)}</div></li></ol>`:'<p>该日期之前事件尚未发生。</p>';
+    $('progressStepHint').textContent=base?.status==='ended'?'此插入位置的节点已结束，请选择更早日期或“在结束状态之前”。':`进展“${base?.currentStep||'待明确'}”将归入历史；新进展在所选日期生效。${point.next?'后续进展仍按原时间和状态保留。':''}`;
     $('progressSubmit').textContent='归档原节点并保存新进展';
-    $('progressSubmit').disabled=progressBusy||!historical||!historical.currentStep?.trim()||historical.status==='ended';
+    $('progressSubmit').disabled=progressBusy||!base?.currentStep?.trim()||base.status==='ended';
   }
   async function saveProgress(operation){
     if(progressBusy)return;
@@ -303,13 +330,17 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   $('progressDialog').addEventListener('cancel',e=>{if(progressBusy)e.preventDefault()});
   $('stageDialog').addEventListener('cancel',e=>{if(stageBusy)e.preventDefault()});
   for(const id of ['filterCategory','filterPriority','filterPressure','filterStatus','filterCoordination'])$(id).addEventListener('change',renderCards);
-  $('eventCards').addEventListener('click',e=>{
+  const onCardAction=e=>{
     const button=e.target.closest('[data-action]');if(!button)return;
     if(button.dataset.action==='progress'||button.dataset.action==='history')openProgress(button.dataset.id);
     else if(button.dataset.action==='stage')openStage(button.dataset.id);
     else openEvent(button.dataset.id);
-  });
+  };
+  $('eventCards').addEventListener('click',onCardAction);
+  $('archiveCards').addEventListener('click',onCardAction);
+  for(const id of ['archiveQuery','archiveFrom','archiveTo'])$(id).addEventListener('input',renderArchive);
   $('progressForm').elements.namedItem('effectiveOn').addEventListener('change',()=>renderProgressDate());
+  $('progressPosition').addEventListener('change',renderProgressDate);
   $('progressForm').elements.namedItem('status').addEventListener('change',renderProgressEnding);
   $('progressForm').elements.namedItem('endDisposition').addEventListener('change',renderProgressEnding);
   $('stagePicker').addEventListener('change',renderStageSelection);
@@ -344,8 +375,8 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   $('progressForm').addEventListener('submit',e=>{
     e.preventDefault();const newStep=e.target.elements.namedItem('newStep').value.trim(),id=progressId;
     if(!newStep)return;
-    const date=e.target.elements.namedItem('effectiveOn').value,values=progressValues();
-    saveProgress(()=>updateEvent(id,event=>advanceEvent(event,newStep,{...values,effectiveOn:date}),'progressState'));
+    const date=e.target.elements.namedItem('effectiveOn').value,values=progressValues(),beforeStageId=$('progressPosition').value;
+    saveProgress(()=>updateEvent(id,event=>advanceEvent(event,newStep,{...values,effectiveOn:date,beforeStageId}),'progressState'));
   });
   $('correctionForm').addEventListener('submit',e=>{
     e.preventDefault();const id=stageEditingId,nodeId=e.target.elements.namedItem('nodeId').value,note=e.target.elements.namedItem('note').value;
@@ -362,18 +393,22 @@ export function initEventApp({getState,onPersist,getSelected,getWeek,getLedger})
   $('confirmOriginalPlan').addEventListener('click',()=>{const date=getSelected();commit(()=>{
     const old=state().eventDays?.[date]||{};
     if(date>localDate()||old.initialPlanEventIds)throw Error('原计划已经固定或日期尚未到来');
-    state().eventDays[date]={...old,initialPlanEventIds:[...(old.plannedEventIds||[])],originalConfirmedAt:new Date().toISOString()};
+    state().eventDays[date]={...old,initialPlanEventIds:[...(old.plannedEventIds||[])],initialCandidateEventIds:[...(old.candidateEventIds||[])],originalConfirmedAt:new Date().toISOString()};
   },'eventDayState')});
   $('recommendContent').addEventListener('click',e=>{
     const button=e.target.closest('[data-plan-toggle]');if(!button)return;
     const date=getSelected(),id=button.dataset.eventId,action=button.dataset.planToggle;
     commit(()=>{
-      const old=state().eventDays?.[date]||{},list=new Set(old.plannedEventIds||[]);
+      const old=state().eventDays?.[date]||{},list=new Set(old.plannedEventIds||[]),candidates=new Set(old.candidateEventIds||[]);
       if(date>localDate())throw Error('未来日期尚无压力历史，请选择今天或过去日期');
       if(action==='add'&&!eventsAtDate(events(),date).some(event=>event.id===id&&event.status!=='ended'))throw Error('该事件在所选日期尚未发生或已结束');
+      if((action==='candidate'||action==='formal')&&!list.has(id))throw Error('请先加入所选日期计划');
       if(action==='add'&&list.has(id)||action==='remove'&&!list.has(id))return;
-      if(action==='add')list.add(id);else list.delete(id);
-      state().eventDays[date]={...old,plannedEventIds:[...list],planChanges:[...(old.planChanges||[]),{at:new Date().toISOString(),action,eventId:id}]};
+      if(action==='add')list.add(id);
+      if(action==='remove')list.delete(id);
+      if(action==='candidate')candidates.add(id);
+      if(action==='formal'||action==='remove')candidates.delete(id);
+      state().eventDays[date]={...old,plannedEventIds:[...list],candidateEventIds:[...candidates],planChanges:[...(old.planChanges||[]),{at:new Date().toISOString(),action,eventId:id}]};
     },'eventDayState');
   });
   return {render};

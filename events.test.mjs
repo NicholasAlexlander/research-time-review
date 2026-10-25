@@ -281,6 +281,89 @@ test('an omitted stage can be inserted before a later stage without rewriting it
   assert.equal(eventAt(event,'2026-10-12').pressure,2);
 });
 
+test('backfill A → D → B → C preserves original node identities and recalculates every affected day',()=>{
+  const stamp=at('2026-10-20');
+  const initial=createEvent({name:'工程链',category:'E',createdOn:'2026-10-12',pressure:1,status:'doing',currentStep:'A'},stamp);
+  const b=advanceEvent(initial,'B',{effectiveOn:'2026-10-14',pressure:1},stamp);
+  const c=advanceEvent(b,'C',{effectiveOn:'2026-10-15',pressure:1},stamp);
+  const other=make('2026-10-12',2,{name:'无关事件'});
+  const oldNodeIds=c.nodes.map(node=>node.id);
+  const corrected=correctNode(c,oldNodeIds[1],'B 的资料后来校对过',at('2026-10-20','05:00'));
+  const inserted=advanceEvent(corrected,'D',{effectiveOn:'2026-10-13',pressure:3,status:'doing',coordinatable:'no'},at('2026-10-20','06:00'));
+  assert.deepEqual(inserted.nodes.map(node=>node.text),['A','D','B']);
+  assert.deepEqual([inserted.nodes[0].id,inserted.nodes[2].id],oldNodeIds);
+  assert.equal(inserted.corrections[0].nodeId,oldNodeIds[1]);
+  assert.equal(inserted.nodes[0].recordedAt,at('2026-10-20','06:00'));
+  assert.equal(inserted.nodes[0].completedAt,'2026-10-12T16:00:00.000Z');
+  assert.equal(inserted.history.find(change=>change.snapshot.currentStep==='D').recordedAt,at('2026-10-20','06:00'));
+  const snapshot=JSON.parse(JSON.stringify({events:[inserted,other],days:{'2026-10-13':{times:{R:120}}}}));
+  assert.deepEqual(['2026-10-12','2026-10-13','2026-10-14','2026-10-15'].map(date=>{
+    const visible=eventsAtDate(snapshot.events,date)[0];
+    return [visible.currentStep,visible.pressure,visible.status,visible.nodes.map(node=>node.text)];
+  }),[['A',1,'doing',[]],['D',3,'doing',['A']],['B',1,'doing',['A','D']],['C',1,'doing',['A','D','B']]]);
+  assert.equal(snapshot.events[1].currentStep,other.currentStep);
+  assert.equal(snapshot.days['2026-10-13'].times.R,120);
+  assert.deepEqual(pressureHistory([c],'2026-10-12','2026-10-15','2026-10-20').map(row=>row.end),[1,1,1,1]);
+  const rows=pressureHistory([inserted],'2026-10-12','2026-10-15','2026-10-20');
+  assert.deepEqual(rows.map(row=>[row.peak,row.end]),[[1,1],[3,3],[1,1],[1,1]]);
+  assert.equal(rows[3].residual,0.6);
+  assert.equal(rows[3].load,1.6);
+  assert.throws(()=>advanceEvent(inserted,'D',{effectiveOn:'2026-10-13'},stamp),/重复补录/);
+});
+
+test('same-day backfill chooses the specified position, and corrections edit only one stage',()=>{
+  const stamp=at('2026-10-20');
+  let event=createEvent({name:'同日节点',category:'R',createdOn:'2026-10-12',pressure:1,status:'doing',currentStep:'A'},stamp);
+  event=advanceEvent(event,'B',{effectiveOn:'2026-10-13',pressure:2},stamp);
+  event=advanceEvent(event,'C',{effectiveOn:'2026-10-14',pressure:3},stamp);
+  const bId=event.history.find(change=>change.kind==='advance').id;
+  event=advanceEvent(event,'D',{effectiveOn:'2026-10-13',beforeStageId:bId,pressure:1},at('2026-10-20','05:00'));
+  assert.deepEqual(event.nodes.map(node=>node.text),['A','D','B']);
+  const dId=event.history.find(change=>change.kind==='advance').id;
+  event=reviseStage(event,dId,{currentStep:'D（更正）'},at('2026-10-21'));
+  assert.deepEqual(event.nodes.map(node=>node.text),['A','D（更正）','B']);
+  assert.equal(event.corrections.at(-1).oldText,'D');
+  assert.equal(event.corrections.at(-1).newText,'D（更正）');
+  assert.equal(event.corrections.at(-1).stageId,dId);
+  assert.deepEqual(['2026-10-12','2026-10-13','2026-10-14'].map(date=>eventAt(event,date).currentStep),['A','B','C']);
+  assert.deepEqual(event.nodes.map(node=>node.stageId),event.history.filter(change=>change.kind==='create'||change.kind==='advance').slice(0,-1).map(change=>change.id));
+  assert.equal(event.history.filter(change=>change.kind==='advance').length,3);
+  assert.equal(event.currentStep,'C');
+});
+
+test('candidate tasks do not inflate planned work while remaining in overall pressure',()=>{
+  const formal=make('2026-10-10',3,{name:'正式任务'}),candidate=make('2026-10-10',3,{name:'候补实验'});
+  const row=pressureAt([formal,candidate],'2026-10-15','2026-10-20');
+  const assessed=analyzeDailyPlan(eventsAtDate([formal,candidate],'2026-10-15'),[formal.id,candidate.id],row,{candidateIds:[candidate.id]});
+  assert.equal(assessed.selectedPressure,3);
+  assert.equal(assessed.candidatePressure,3);
+  assert.equal(assessed.planLoad,3);
+  assert.equal(assessed.overallLoad,6);
+  assert.deepEqual(assessed.formalIds,[formal.id]);
+  const onlyCandidate=analyzeDailyPlan(eventsAtDate([formal,candidate],'2026-10-15'),[candidate.id],row,{candidateIds:[candidate.id]});
+  assert.equal(onlyCandidate.label,'仅有候补任务');
+  assert.match(onlyCandidate.action,/整体负荷仍较高/);
+});
+
+test('backfilled pressure change recomputes a high-pressure streak without touching other events',()=>{
+  const stamp=at('2026-10-20');
+  let event=createEvent({name:'连续高压',category:'R',createdOn:'2026-10-01',pressure:2,status:'doing',currentStep:'A'},stamp);
+  event=advanceEvent(event,'B',{effectiveOn:'2026-10-08',pressure:2},stamp);
+  event=advanceEvent(event,'C',{effectiveOn:'2026-10-09',pressure:2},stamp);
+  assert.equal(pressureAt([event],'2026-10-14','2026-10-20').chronic,1);
+  const other=make('2026-10-01',1,{name:'独立事件'});
+  const altered=advanceEvent(event,'D',{effectiveOn:'2026-10-04',pressure:0},stamp);
+  assert.equal(eventAt(altered,'2026-10-03').pressure,2);
+  assert.equal(eventAt(altered,'2026-10-04').pressure,0);
+  assert.equal(eventAt(altered,'2026-10-08').pressure,2);
+  const previous=pressureAt([event,other],'2026-10-14','2026-10-20');
+  const recomputed=pressureAt([altered,other],'2026-10-14','2026-10-20');
+  assert.equal(previous.chronic,1);
+  assert.equal(recomputed.chronic,0.5);
+  assert.equal(recomputed.end,previous.end);
+  assert.equal(eventAt(other,'2026-10-14').pressure,1);
+});
+
 test('correcting an event start date replays history but keeps actual recording and later changes',()=>{
   const recorded=at('2026-10-15');
   let e=createEvent({name:'设备问题',category:'R',pressure:2,createdOn:'2026-10-15'},recorded);

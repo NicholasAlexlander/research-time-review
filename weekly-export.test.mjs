@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultRules} from './calc.mjs';
 import {makeWeeklySnapshot,weeklySnapshotMarkdown} from './weekly-export.mjs';
-import {createEvent,changeEvent,advanceEvent} from './events.mjs';
+import {createEvent,changeEvent,advanceEvent,reviseStage} from './events.mjs';
 
 test('weekly export is scoped to seven dates and keeps raw entries beside calculated values',()=>{
   const state={rules:{...defaultRules},openingRest:60,openingPoints:2,weeks:{'2026-09-21':'本周复现了一个 Bug。'},days:{
@@ -135,4 +135,24 @@ test('weekly export keeps each historical node effective date and ending state',
   assert.equal(snapshot.eventManagement.events[0].completedNodes[0].pressure,3);
   assert.equal(snapshot.eventManagement.events[0].completedNodes[0].coordinatable,'yes');
   assert.match(weeklySnapshotMarkdown(snapshot),/完善界面（生效 .*结束时 H3 \/ 处理中 \/ 可协调/);
+});
+
+test('weekly export retains candidate plan classification and text correction audit',()=>{
+  const stamp='2026-10-15T04:00:00.000Z';
+  let formal=createEvent({name:'正式实验',category:'R',pressure:2,status:'doing',createdOn:'2026-10-12',currentStep:'旧描述'},stamp);
+  formal=advanceEvent(formal,'新节点',{effectiveOn:'2026-10-13'},stamp);
+  const first=formal.history.find(change=>change.kind==='create');
+  formal=reviseStage(formal,first.id,{currentStep:'更准确的描述'},'2026-10-15T05:00:00.000Z');
+  const candidate=createEvent({name:'候补工程',category:'E',pressure:3,status:'doing',createdOn:'2026-10-12',currentStep:'构建'},stamp);
+  const state={rules:{...defaultRules},openingRest:0,openingPoints:0,weeks:{},days:{},events:[formal,candidate],eventDays:{
+    '2026-10-15':{plannedEventIds:[formal.id,candidate.id],candidateEventIds:[candidate.id],planChanges:[{action:'candidate',eventId:candidate.id,at:stamp}]}}};
+  const snapshot=makeWeeklySnapshot(state,'2026-10-12',new Date('2026-10-15T12:00:00.000Z'));
+  assert.equal(snapshot.days[3].eventRecord.planAssessment.selectedPressure,2);
+  assert.equal(snapshot.days[3].eventRecord.planAssessment.candidatePressure,3);
+  assert.equal(snapshot.days[3].eventRecord.planAssessment.overallLoad,5);
+  assert.equal(snapshot.eventManagement.events[0].completedNodes[0].text,'更准确的描述');
+  assert.equal(snapshot.eventManagement.events[0].corrections[0].oldText,'旧描述');
+  const markdown=weeklySnapshotMarkdown(snapshot);
+  assert.match(markdown,/候补工程（候补）/);
+  assert.match(markdown,/旧描述 → 更准确的描述/);
 });

@@ -24,11 +24,8 @@ const dateDiff=(a,b)=>Math.round((Date.parse(a+'T12:00:00Z')-Date.parse(b+'T12:0
 const serial=()=>globalThis.crypto?.randomUUID?.()||`item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const snapshot=event=>Object.fromEntries(['name','category','priority','pressure','coordinatable','status','deadline','currentStep','nextStep','nextMinutes','cognitive','notes','conditions','closedAt','endDisposition','closeReason','coordinatedAt'].map(k=>[k,event[k]]));
 const stageFields=['pressure','status','coordinatable'];
-const sortedHistory=event=>[...(event.history||[])].sort((a,b)=>a.at.localeCompare(b.at));
-const transitionIndexForNode=(history,node)=>{
-  const byId=node.transitionId?history.findIndex(change=>change.kind==='advance'&&change.id===node.transitionId):-1;
-  return byId>=0?byId:history.findIndex(change=>change.kind==='advance'&&change.at===node.completedAt);
-};
+const compareChange=(a,b)=>a.at.localeCompare(b.at)||(a.order??0)-(b.order??0);
+const sortedHistory=event=>[...(event.history||[])].sort(compareChange);
 // Legacy edits could change progress text without creating a new node. Align
 // snapshots within each stage before a write, while leaving dated H/status
 // snapshots intact. A real advance is the only boundary between stages.
@@ -47,6 +44,32 @@ function alignedProgressHistory(event){
   return history;
 }
 const withLatest=(event,history,at)=>({...event,...history.at(-1).snapshot,history,updatedAt:at});
+// A completed node belongs to its START stage, not to the transition that
+// finished it. Inserting a stage in the middle changes the completion time of
+// its predecessor, but must not move that predecessor's ID/corrections to the
+// newly inserted stage.
+function completedStageNodes(event,history){
+  const previous=sortedHistory(event).filter(change=>change.kind==='create'||change.kind==='advance');
+  const oldNodes=event.nodes||[];
+  const byStage=new Map();
+  for(let i=0;i<previous.length-1;i++){
+    const next=previous[i+1];
+    const old=oldNodes.find(n=>n.stageId===previous[i].id)||
+      oldNodes.find(n=>n.transitionId===next.id)||
+      oldNodes.find(n=>n.completedAt===next.at&&!byStageHasNode(byStage,n.id))||oldNodes[i];
+    if(old)byStage.set(previous[i].id,old);
+  }
+  const stages=history.filter(change=>change.kind==='create'||change.kind==='advance');
+  return stages.slice(0,-1).map((stage,i)=>{
+    const next=stages[i+1],prior=history[history.indexOf(next)-1]?.snapshot||stage.snapshot;
+    const old=byStage.get(stage.id);
+    return {...old,id:old?.id||serial(),stageId:stage.id,transitionId:next.id,
+      text:prior.currentStep,completedAt:next.at,
+      recordedAt:old?.transitionId===next.id?(old.recordedAt||next.recordedAt||next.at):(next.recordedAt||next.at),
+      pressure:prior.pressure,status:prior.status,coordinatable:prior.coordinatable};
+  });
+}
+const byStageHasNode=(map,id)=>[...map.values()].some(node=>node.id===id);
 const h=value=>Math.max(0,Math.min(3,Number(value)||0));
 const contribution=s=>s.status==='ended'?0:h(s.pressure);
 export const activeEvents=events=>events.filter(e=>e.status!=='ended');
@@ -142,10 +165,12 @@ export function reviseStage(event,stageId,values,at=new Date().toISOString()){
   if(Object.hasOwn(values,'pressure')&&(!Number.isInteger(Number(values.pressure))||Number(values.pressure)<0||Number(values.pressure)>3))throw Error('压力等级需为 H0 至 H3');
   if(Object.hasOwn(values,'status')&&!eventStatuses[values.status])throw Error('请选择有效的事件状态');
   if(Object.hasOwn(values,'coordinatable')&&!coordinationLabels[values.coordinatable])throw Error('请选择有效的可协调性');
+  if(Object.hasOwn(values,'currentStep')&&!String(values.currentStep||'').trim())throw Error('节点描述不能为空');
   if(values.status==='ended'&&history.slice(index+1).some(change=>change.kind==='advance'))throw Error('后面已有进展节点，不能将其前面的节点设为已结束');
   if(values.status==='ended'&&values.endDisposition==='canceled'&&!values.closeReason?.trim())throw Error('取消事件时请填写原因');
-  const editable=[...stageFields,...(target.kind==='create'&&!event.nodes?.length?['currentStep']:[])];
-  const patch=Object.fromEntries(editable.filter(field=>values[field]!==undefined).map(field=>[field,field==='pressure'?h(values[field]):values[field]]));
+  const editable=[...stageFields,'currentStep'];
+  const patch=Object.fromEntries(editable.filter(field=>values[field]!==undefined).map(field=>[field,field==='pressure'?h(values[field]):field==='currentStep'?String(values[field]).trim():values[field]]));
+  const originalText=progressForStage({history},stageId)?.currentStep||'';
   if(Object.hasOwn(patch,'status')&&patch.status!==target.snapshot.status){
     patch.closedAt=patch.status==='ended'?target.at:null;
     patch.endDisposition=patch.status==='ended'?(values.endDisposition||'completed'):null;
@@ -164,13 +189,44 @@ export function reviseStage(event,stageId,values,at=new Date().toISOString()){
     for(const field of editable)if(Object.hasOwn(patch,field)&&original[field]===previousOriginal[field])updated[field]=previousUpdated[field];
     history[i]={...history[i],snapshot:updated};previousOriginal=original;previousUpdated=updated;
   }
-  const nodes=(event.nodes||[]).map(node=>{
-    const index=transitionIndexForNode(history,node);
-    if(index<0)return node;
-    const before=history[index-1]?.snapshot;
-    return before?{...node,pressure:before.pressure,status:before.status,coordinatable:before.coordinatable}:node;
-  });
-  return {...withLatest(event,history,at),nodes,progressModel:'current-only'};
+  const nodes=completedStageNodes(event,history);
+  const corrected=Object.hasOwn(patch,'currentStep')&&originalText!==patch.currentStep;
+  const corrections=corrected?[...(event.corrections||[]),{id:serial(),kind:'text',stageId,at,
+    oldText:originalText,newText:patch.currentStep,note:`节点描述：${originalText} → ${patch.currentStep}`}]:event.corrections||[];
+  return {...withLatest(event,history,at),nodes,corrections,progressModel:'current-only'};
+}
+function insertionPoint(history,date,at,beforeStageId){
+  const target=beforeStageId?history.find((change,index)=>change.id===beforeStageId&&
+    (change.kind==='advance'||change.snapshot.status==='ended'&&history[index-1]?.snapshot.status!=='ended')):null;
+  if(beforeStageId&&!target)throw Error('要插入到其前的节点不存在');
+  if(target&&date>dateInShanghai(target.at))throw Error('补录日期晚于所选后继节点');
+  let effectiveAt=date===dateInShanghai(at)?at:dayStart(date),order=0;
+  if(target&&date===dateInShanghai(target.at)){
+    effectiveAt=target.at;
+    const tied=history.filter(change=>change.at===target.at);
+    if(new Set(tied.map(change=>change.order??0)).size!==tied.length)
+      tied.forEach((change,index)=>{change.order=index*2});
+    const earlier=history.filter(change=>change.at===target.at&&change!==target&&history.indexOf(change)<history.indexOf(target)).at(-1);
+    order=earlier?((earlier.order??0)+(target.order??0))/2:(target.order??0)-1;
+    // Same-timestamp records without an explicit order retain their stable
+    // order; place the insertion strictly before the requested successor.
+  }else{
+    const sameDay=history.filter(change=>dateInShanghai(change.at)===date&&(!target||compareChange(change,target)<0));
+    if(sameDay.length&&effectiveAt<=sameDay.at(-1).at)effectiveAt=new Date(Date.parse(sameDay.at(-1).at)+1).toISOString();
+  }
+  if(dateInShanghai(effectiveAt)!==date)throw Error('该日期内没有可用的进展顺序，请选择明确的后继节点');
+  if(effectiveAt>at)throw Error('进展生效时间不能晚于补录时间');
+  const probe={at:effectiveAt,order};
+  const index=history.findIndex(change=>compareChange(change,probe)>0);
+  const insert=index<0?history.length:index;
+  const next=history.slice(insert).find((change,index,list)=>change.kind==='advance'||
+    change.snapshot.status==='ended'&&(index===0?history[insert-1]?.snapshot.status!=='ended':list[index-1].snapshot.status!=='ended'));
+  if(target&&next?.id!==target.id)throw Error('所选节点位置与补录日期不一致，请检查进展顺序');
+  return {effectiveAt,order,insert,base:history[insert-1]?.snapshot,next};
+}
+export function previewProgressInsertion(event,date,beforeStageId='',at=new Date().toISOString()){
+  const history=sortedHistory(event).map(change=>({...change}));
+  return insertionPoint(history,date,at,beforeStageId);
 }
 export function advanceEvent(event,newCurrentStep,optionsOrAt={},recordedAt=new Date().toISOString()){
   const options=typeof optionsOrAt==='string'?{}:optionsOrAt;
@@ -178,42 +234,32 @@ export function advanceEvent(event,newCurrentStep,optionsOrAt={},recordedAt=new 
   const date=options.effectiveOn||dateInShanghai(at),start=eventStartDate(event);
   if(!validDate(date)||date<start||date>dateInShanghai(at))throw Error('进展日期需在事件发生日期与今天之间');
   const history=alignedProgressHistory(event);
-  const sameDay=history.filter(change=>dateInShanghai(change.at)===date);
-  let effectiveAt=date===dateInShanghai(at)?at:dayStart(date);
-  if(sameDay.length&&effectiveAt<=sameDay.at(-1).at)effectiveAt=new Date(Date.parse(sameDay.at(-1).at)+1).toISOString();
-  const index=history.findIndex(change=>change.at>effectiveAt);
-  const insert=index<0?history.length:index;
-  const base=history[insert-1]?.snapshot;
+  const {effectiveAt,order,insert,base,next}=insertionPoint(history,date,at,options.beforeStageId);
   if(!base?.currentStep?.trim())throw Error('请先填写当前节点');
   if(base.status==='ended')throw Error('已结束的节点不能继续推进，请先更正该节点状态');
   if(!String(newCurrentStep||'').trim())throw Error('请填写新增的当前进展');
+  if(base.currentStep.trim()===String(newCurrentStep).trim()||next?.snapshot.currentStep?.trim()===String(newCurrentStep).trim())throw Error('相邻进展描述相同，请检查是否重复补录');
   const values={pressure:options.pressure??base.pressure,status:options.status??base.status,coordinatable:options.coordinatable??base.coordinatable};
   if(!Number.isInteger(Number(values.pressure))||Number(values.pressure)<0||Number(values.pressure)>3)throw Error('压力等级需为 H0 至 H3');
   if(!eventStatuses[values.status]||!coordinationLabels[values.coordinatable])throw Error('请选择有效的节点状态');
   if(values.status==='ended'&&history.slice(insert).some(change=>change.kind==='advance'))throw Error('后面已有进展节点，不能提前结束事件');
   if(values.status==='ended'&&options.endDisposition==='canceled'&&!options.closeReason?.trim())throw Error('取消事件时请填写原因');
-  const completed={id:serial(),text:base.currentStep,completedAt:effectiveAt,recordedAt:at,
-    pressure:base.pressure,status:base.status,coordinatable:base.coordinatable};
   const newState={...base,currentStep:String(newCurrentStep).trim(),nextStep:'',nextMinutes:0,
     pressure:h(values.pressure),status:values.status,coordinatable:values.coordinatable,
     closedAt:values.status==='ended'?effectiveAt:null,
     endDisposition:values.status==='ended'?(options.endDisposition||'completed'):null,
     closeReason:values.status==='ended'?(options.closeReason||''):''};
-  const transition={id:serial(),at:effectiveAt,recordedAt:at,kind:'advance',snapshot:newState};
-  completed.transitionId=transition.id;
+  const transition={id:serial(),at:effectiveAt,order,recordedAt:at,kind:'advance',snapshot:newState};
   history.splice(insert,0,transition);
   let old=base,updated=newState;
   for(let i=insert+1;i<history.length;i++){
     if(history[i].kind==='advance')break;
     const original=history[i].snapshot,rebased={...original};
-    for(const field of ['currentStep','nextStep','nextMinutes'])if(original[field]===old[field])rebased[field]=updated[field];
+    for(const field of ['currentStep','nextStep','nextMinutes','pressure','status','coordinatable','closedAt','endDisposition','closeReason'])
+      if(original[field]===old[field])rebased[field]=updated[field];
     history[i]={...history[i],snapshot:rebased};old=original;updated=rebased;
   }
-  const nodes=[...(event.nodes||[]),completed].map(node=>{
-    const transitionIndex=transitionIndexForNode(history,node);
-    const before=history[transitionIndex-1]?.snapshot;
-    return before?{...node,text:before.currentStep,pressure:before.pressure,status:before.status,coordinatable:before.coordinatable}:node;
-  }).sort((a,b)=>a.completedAt.localeCompare(b.completedAt));
+  const nodes=completedStageNodes(event,history);
   return {...withLatest(event,history,at),nodes,progressModel:'current-only'};
 }
 // This one event was recorded with the retired two-step form: the first save

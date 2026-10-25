@@ -66,7 +66,8 @@ export function makeWeeklySnapshot(state,start,exportedAt=new Date(),sourceSync=
     const schedule=daySchedule(date);
     const record=state.eventDays?.[date]||{};
     const lateNight=[date,shiftDate(date,-1)].some(d=>{const time=state.days[d]?.endTime;return time&&(time>='23:30'||time<'06:00')});
-    const assessment=analyzeDailyPlan(eventsAtDate(state.events||[],date),record.plannedEventIds||[],eventSummary.rows[index],{energy:record.energy,lateNight});
+    const assessment=analyzeDailyPlan(eventsAtDate(state.events||[],date),record.plannedEventIds||[],eventSummary.rows[index],
+      {energy:record.energy,lateNight,candidateIds:record.candidateEventIds||[]});
     const shared={date,scheduled:{weekday:schedule.weekday,label:schedule.label,kind:schedule.kind,rest:schedule.rest},engineering:{...engineering.daily[index]},
       eventRecord:{...record,pressure:eventSummary.rows[index],planAssessment:assessment}};
     const entry=state.days[date];
@@ -188,10 +189,11 @@ export function weeklySnapshotMarkdown(snapshot){
     if(eventDay.energy)lines.push(`- 精力状态：${energyLabels[eventDay.energy]||inline(eventDay.energy)}`);
     if(eventDay.pressure?.recorded)lines.push(`- 事务压力：峰值 ${eventDay.pressure.peak}，日末 ${eventDay.pressure.end}，逐事件下降残留 ${eventDay.pressure.residual??'记录不足'}，持续负荷 ${eventDay.pressure.chronic??'记录不足'}，综合 ${eventDay.pressure.load??'记录不足'}。`);
     const nameAtDate=id=>inline(event?.events.find(item=>item.id===id)?.changes.filter(c=>dateInShanghai(new Date(c.at))<=day.date).at(-1)?.snapshot.name||id);
-    if(eventDay.initialPlanEventIds)lines.push(`- 原计划：${eventDay.initialPlanEventIds.map(nameAtDate).join('；')||'空'}（确认时间 ${eventDay.originalConfirmedAt||'未记录'}）`);
-    if(eventDay.plannedEventIds?.length)lines.push(`- 当前计划：${eventDay.plannedEventIds.map(nameAtDate).join('；')}`);
-    if(eventDay.planAssessment&&eventDay.plannedEventIds?.length)lines.push(`- 计划压力：所选 H ${eventDay.planAssessment.selectedPressure}；所选持续负荷 ${eventDay.planAssessment.selectedChronic}；下降残留 ${eventDay.planAssessment.residual??'记录不足'}；计划值 ${eventDay.planAssessment.planLoad??'记录不足'}；整体负荷 ${eventDay.planAssessment.overallLoad??'记录不足'}；建议：${inline(eventDay.planAssessment.label)}，${inline(eventDay.planAssessment.action)}`);
-    for(const change of eventDay.planChanges||[])lines.push(`- 计划选择：${change.action==='add'?'加入':'取消'} ${nameAtDate(change.eventId)}（${change.at}）`);
+    if(eventDay.initialPlanEventIds)lines.push(`- 原计划：${eventDay.initialPlanEventIds.map(id=>`${nameAtDate(id)}${(eventDay.initialCandidateEventIds||[]).includes(id)?'（候补）':''}`).join('；')||'空'}（确认时间 ${eventDay.originalConfirmedAt||'未记录'}）`);
+    if(eventDay.plannedEventIds?.length)lines.push(`- 当前计划：${eventDay.plannedEventIds.map(id=>`${nameAtDate(id)}${(eventDay.candidateEventIds||[]).includes(id)?'（候补）':'（正式）'}`).join('；')}`);
+    if(eventDay.planAssessment&&eventDay.plannedEventIds?.length)lines.push(`- 计划压力：所选 H ${eventDay.planAssessment.selectedPressure}；候补 H ${eventDay.planAssessment.candidatePressure}；所选持续负荷 ${eventDay.planAssessment.selectedChronic}；下降残留 ${eventDay.planAssessment.residual??'记录不足'}；计划值 ${eventDay.planAssessment.planLoad??'记录不足'}；整体负荷 ${eventDay.planAssessment.overallLoad??'记录不足'}；建议：${inline(eventDay.planAssessment.label)}，${inline(eventDay.planAssessment.action)}`);
+    const planAction={add:'加入',remove:'取消',candidate:'设为候补',formal:'转为正式'};
+    for(const change of eventDay.planChanges||[])lines.push(`- 计划选择：${planAction[change.action]||inline(change.action)} ${nameAtDate(change.eventId)}（${change.at}）`);
     for(const adjustment of eventDay.adjustments||[]){
       lines.push(`- 旧版手写计划调整（${adjustment.at}）：${[['原计划','original'],['新增','added'],['延期','deferred'],['协调','coordinate'],['原因','reason']].filter(([,key])=>adjustment[key]).map(([label,key])=>`${label} ${inline(adjustment[key])}`).join('；')}`);
     }
