@@ -40,6 +40,8 @@ export function analyzeDailyPlan(events,selectedIds,pressureRow,{energy='',lateN
   if(!selectedIds?.length)action='从推荐中选择准备处理的事件，系统会即时评估。';
   else if(!active.length&&candidates.length)action=severe?'候补任务不要求今天全部完成；整体负荷仍较高，先安排恢复或处理必要事务。':'候补任务只在等待间隙或有余力时推进，不视为今日必做。';
   else if(blocked.length)action='先确认等待或暂缓事项是否有明确可执行动作，再安排实际工作。';
+  else if(candidates.length&&planLoad!==null&&planLoad<4&&overallLoad!==null&&overallLoad>=4)
+    action='正式计划相对较轻，候补不要求今天完成；整体事务仍有压力，请给恢复或必要协调留出空间。';
   else if(severe)action=urgent.length?'优先保留临期必要交付，协调或减少其他可调整事务。':'考虑移除或协调非紧急事务，为恢复留出空间。';
   else if(cautious)action='保留最明确的一步，避免同时安排过多高认知事务。';
   if(planLoad===null&&selectedIds?.length)reasons.push('前三天压力历史不足，计划压力暂不计算为零');

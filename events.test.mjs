@@ -340,6 +340,7 @@ test('candidate tasks do not inflate planned work while remaining in overall pre
   assert.equal(assessed.planLoad,3);
   assert.equal(assessed.overallLoad,6);
   assert.deepEqual(assessed.formalIds,[formal.id]);
+  assert.match(assessed.action,/正式计划相对较轻，候补不要求今天完成/);
   const onlyCandidate=analyzeDailyPlan(eventsAtDate([formal,candidate],'2026-10-15'),[candidate.id],row,{candidateIds:[candidate.id]});
   assert.equal(onlyCandidate.label,'仅有候补任务');
   assert.match(onlyCandidate.action,/整体负荷仍较高/);
